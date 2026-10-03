@@ -16,6 +16,7 @@ import {
 import type { OrderItem, OrderStatus } from '../types';
 import { LeafletMapPreview } from './LeafletMapPreview';
 import { formatRupiah } from '../utils/pricing';
+import { apiUrl, fileUrl, parseJsonResponse } from '../utils/api';
 import { WhatsAppPreviewModal } from './WhatsAppPreviewModal';
 
 interface TrackingViewProps {
@@ -71,11 +72,8 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ initialTrackingCode 
     setLoading(true);
     setErrorMessage(null);
     try {
-      const res = await fetch(`/api/orders/${encodeURIComponent(codeToFetch.trim())}`);
-      if (!res.ok) {
-        throw new Error('Pesanan dengan kode tracking ini tidak ditemukan.');
-      }
-      const data: OrderItem = await res.json();
+      const res = await fetch(apiUrl(`/api/orders/${encodeURIComponent(codeToFetch.trim())}`));
+      const data = await parseJsonResponse<OrderItem>(res, 'Pesanan dengan kode tracking ini tidak ditemukan.');
       setOrder(data);
       if (data.rating) {
         setSelectedRating(data.rating);
@@ -99,7 +97,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ initialTrackingCode 
 
   // Real-Time Server-Sent Events (SSE) Listener
   useEffect(() => {
-    const eventSource = new EventSource('/api/events');
+    const eventSource = new EventSource(apiUrl('/api/events'));
     eventSource.addEventListener('order_updated', (e: MessageEvent) => {
       try {
         const updated: OrderItem = JSON.parse(e.data);
@@ -126,13 +124,12 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ initialTrackingCode 
     if (!order) return;
     setIsSubmittingFeedback(true);
     try {
-      const res = await fetch(`/api/orders/${order.trackingCode}/feedback`, {
+      const res = await fetch(apiUrl(`/api/orders/${order.trackingCode}/feedback`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rating: selectedRating, review: reviewText }),
       });
-      if (!res.ok) throw new Error('Gagal mengirimkan ulasan');
-      const data = await res.json();
+      const data = await parseJsonResponse<{ order: OrderItem }>(res, 'Gagal mengirimkan ulasan');
       setOrder(data.order);
       setFeedbackSuccess(true);
     } catch (err: any) {
@@ -391,7 +388,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ initialTrackingCode 
                   </div>
 
                   <a
-                    href={order.gisResultFiles?.zipShpUrl || '/uploads/samples/sample_shp_bundle.zip'}
+                    href={fileUrl(order.gisResultFiles?.zipShpUrl || '/uploads/samples/sample_shp_bundle.zip')}
                     download={`Polygon_KKPR_${order.trackingCode}.zip`}
                     className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-100 text-[#7d3feb] rounded-xl text-xs font-bold shadow transition"
                   >
@@ -416,7 +413,7 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ initialTrackingCode 
                   </div>
 
                   <a
-                    href={order.gisResultFiles?.rtbPdfUrl || '/uploads/samples/sample_rtb_rencana_tapak.pdf'}
+                    href={fileUrl(order.gisResultFiles?.rtbPdfUrl || '/uploads/samples/sample_rtb_rencana_tapak.pdf')}
                     download={`Dokumen_RTB_${order.trackingCode}.pdf`}
                     className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-100 text-[#7d3feb] rounded-xl text-xs font-bold shadow transition"
                   >
@@ -430,14 +427,14 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ initialTrackingCode 
               <div className="flex flex-wrap items-center gap-3 pt-2 text-xs">
                 <span className="text-purple-200 font-medium">Format Tambahan:</span>
                 <a
-                  href={order.gisResultFiles?.kmlUrl || '/uploads/samples/sample_layer.kml'}
+                  href={fileUrl(order.gisResultFiles?.kmlUrl || '/uploads/samples/sample_layer.kml')}
                   download={`Layer_${order.trackingCode}.kml`}
                   className="text-white hover:underline bg-white/10 px-3 py-1.5 rounded-lg border border-white/15"
                 >
                   Download .KML (Google Earth)
                 </a>
                 <a
-                  href={order.gisResultFiles?.geoJsonUrl || '/uploads/samples/sample_polygon.geojson'}
+                  href={fileUrl(order.gisResultFiles?.geoJsonUrl || '/uploads/samples/sample_polygon.geojson')}
                   download={`Data_${order.trackingCode}.geojson`}
                   className="text-white hover:underline bg-white/10 px-3 py-1.5 rounded-lg border border-white/15"
                 >

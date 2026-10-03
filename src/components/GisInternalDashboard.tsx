@@ -18,6 +18,7 @@ import type { OrderItem, OrderStatus } from '../types';
 import { formatRupiah, AVAILABLE_COUPONS } from '../utils/pricing';
 import { WhatsAppPreviewModal } from './WhatsAppPreviewModal';
 import { syncOrderToFirebase } from '../services/firebase';
+import { apiUrl, fileUrl, parseJsonResponse } from '../utils/api';
 
 const STATUS_OPTIONS: OrderStatus[] = [
   'Menunggu Pembayaran',
@@ -67,11 +68,11 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
   const fetchOrdersAndStats = async () => {
     try {
       const [ordersRes, statsRes] = await Promise.all([
-        fetch('/api/orders'),
-        fetch('/api/stats'),
+        fetch(apiUrl('/api/orders')),
+        fetch(apiUrl('/api/stats')),
       ]);
-      const ordersData = await ordersRes.json();
-      const statsData = await statsRes.json();
+      const ordersData = await parseJsonResponse<OrderItem[]>(ordersRes, 'Gagal memuat daftar pesanan');
+      const statsData = await parseJsonResponse<any>(statsRes, 'Gagal memuat statistik');
       setOrders(ordersData);
       setStats(statsData);
 
@@ -92,7 +93,7 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
 
   // Real-Time Server-Sent Events (SSE)
   useEffect(() => {
-    const eventSource = new EventSource('/api/events');
+    const eventSource = new EventSource(apiUrl('/api/events'));
     eventSource.addEventListener('order_updated', (e: MessageEvent) => {
       try {
         const updated: OrderItem = JSON.parse(e.data);
@@ -124,13 +125,12 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
     if (!selectedOrder) return;
     setUpdatingStatus(true);
     try {
-      const res = await fetch(`/api/orders/${selectedOrder.trackingCode}/status`, {
+      const res = await fetch(apiUrl(`/api/orders/${selectedOrder.trackingCode}/status`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       });
-      if (!res.ok) throw new Error('Gagal memperbarui status');
-      const data = await res.json();
+      const data = await parseJsonResponse<{ order: OrderItem }>(res, 'Gagal memperbarui status');
       setSelectedOrder(data.order);
       setOrders((prev) =>
         prev.map((item) => (item.id === data.order.id ? data.order : item))
@@ -155,12 +155,11 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
     if (rtbPdfFile) formData.append('rtbPdf', rtbPdfFile);
 
     try {
-      const res = await fetch(`/api/orders/${selectedOrder.trackingCode}/upload-gis`, {
+      const res = await fetch(apiUrl(`/api/orders/${selectedOrder.trackingCode}/upload-gis`), {
         method: 'POST',
         body: formData,
       });
-      if (!res.ok) throw new Error('Gagal mengunggah berkas GIS');
-      const data = await res.json();
+      const data = await parseJsonResponse<{ order: OrderItem }>(res, 'Gagal mengunggah berkas GIS');
       setSelectedOrder(data.order);
       syncOrderToFirebase(data.order);
       alert('Berkas hasil pengerjaan GIS & RTB berhasil diperbarui dan disinkronkan!');
@@ -176,13 +175,12 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
     if (!selectedOrder || manualDiscountAmount <= 0) return;
     setApplyingDiscount(true);
     try {
-      const res = await fetch(`/api/orders/${selectedOrder.trackingCode}/discount`, {
+      const res = await fetch(apiUrl(`/api/orders/${selectedOrder.trackingCode}/discount`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ discountAmount: manualDiscountAmount }),
       });
-      if (!res.ok) throw new Error('Gagal menerapkan diskon');
-      const data = await res.json();
+      const data = await parseJsonResponse<{ order: OrderItem }>(res, 'Gagal menerapkan diskon');
       setSelectedOrder(data.order);
       setOrders((prev) =>
         prev.map((item) => (item.id === data.order.id ? data.order : item))
@@ -201,7 +199,7 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
     if (!selectedOrder || !clarifyMessage.trim()) return;
     setSendingClarify(true);
     try {
-      const res = await fetch(`/api/orders/${selectedOrder.trackingCode}/clarify`, {
+      const res = await fetch(apiUrl(`/api/orders/${selectedOrder.trackingCode}/clarify`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -209,7 +207,7 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
           sender: staffUser ? `${staffUser.name} (Tim GIS)` : 'Tim Pemetaan GIS & Drafter',
         }),
       });
-      if (!res.ok) throw new Error('Gagal menyimpan notifikasi klarifikasi');
+      await parseJsonResponse(res, 'Gagal menyimpan notifikasi klarifikasi');
       setShowWaClarifyModal(true);
     } catch (err: any) {
       alert(`Error: ${err.message}`);
@@ -509,7 +507,7 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
                     </span>
                   </div>
                   <a
-                    href={selectedOrder.gisResultFiles?.geoJsonUrl || '/uploads/samples/sample_polygon.geojson'}
+                    href={fileUrl(selectedOrder.gisResultFiles?.geoJsonUrl || '/uploads/samples/sample_polygon.geojson')}
                     download={`Draf_Polygon_${selectedOrder.trackingCode}.geojson`}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg font-bold text-slate-700 shadow-sm"
                   >

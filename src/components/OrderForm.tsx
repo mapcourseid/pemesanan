@@ -21,6 +21,7 @@ import {
 } from '../utils/pricing';
 import type { AssessmentFactorInput } from '../utils/pricing';
 import type { OrderItem } from '../types';
+import { apiUrl, parseJsonResponse } from '../utils/api';
 import shp from 'shpjs';
 
 interface OrderFormProps {
@@ -152,8 +153,8 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const res = await fetch('/api/upload', { method: 'POST', body: formData });
-      const data = await res.json();
+      const res = await fetch(apiUrl('/api/upload'), { method: 'POST', body: formData });
+      const data = await parseJsonResponse<{ fileUrl?: string }>(res, 'Gagal mengunggah dokumen tanah');
       if (data.fileUrl) {
         setLandDocumentUrl(data.fileUrl);
       }
@@ -247,18 +248,13 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
     };
 
     try {
-      const res = await fetch('/api/orders', {
+      const res = await fetch(apiUrl('/api/orders'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Gagal menyimpan pesanan');
-      }
-
-      const createdOrder = await res.json();
+      const createdOrder = await parseJsonResponse<OrderItem>(res, 'Gagal menyimpan pesanan');
       onOrderCreated(createdOrder);
     } catch (err: any) {
       alert(`Terjadi kesalahan: ${err.message}`);

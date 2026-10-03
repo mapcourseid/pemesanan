@@ -19,6 +19,7 @@ import {
 import confetti from 'canvas-confetti';
 import type { OrderItem } from '../types';
 import { formatRupiah } from '../utils/pricing';
+import { apiUrl, parseJsonResponse } from '../utils/api';
 import { WhatsAppPreviewModal } from './WhatsAppPreviewModal';
 
 interface PaymentViewProps {
@@ -44,7 +45,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
     if (!order) return;
     setIsXenditLoading(true);
     try {
-      const res = await fetch('/api/payment/xendit/invoice', {
+      const res = await fetch(apiUrl('/api/payment/xendit/invoice'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -52,13 +53,8 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
         }),
       });
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Gagal memanggil gateway Xendit');
-      }
-
-      const data = await res.json();
-      setXenditUrl(data.invoiceUrl);
+      const data = await parseJsonResponse<{ invoiceUrl?: string }>(res, 'Gagal memanggil gateway Xendit');
+      setXenditUrl(data.invoiceUrl || null);
 
       // Buka halaman pembayaran resmi Xendit di tab/jendela baru
       if (data.invoiceUrl) {
@@ -90,7 +86,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
   const handleSimulatePayment = async () => {
     setIsProcessing(true);
     try {
-      const res = await fetch(`/api/orders/${order.trackingCode}/pay`, {
+      const res = await fetch(apiUrl(`/api/orders/${order.trackingCode}/pay`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -98,8 +94,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
         }),
       });
 
-      if (!res.ok) throw new Error('Gagal memverifikasi pembayaran');
-      const data = await res.json();
+      const data = await parseJsonResponse<{ order: OrderItem }>(res, 'Gagal memverifikasi pembayaran');
 
       confetti({
         particleCount: 110,

@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',') : ['http://localhost:5173', 'http://localhost:4173'],
+  origin: true,
   credentials: true,
 }));
 app.use(express.json({ limit: '50mb' }));
@@ -509,6 +509,18 @@ app.post('/api/orders/:code/discount', (req, res) => {
   broadcastUpdate('order_updated', order);
   res.json({ success: true, order });
 });
+
+// Serve frontend static build if present (e.g. when deployed to Railway as fullstack)
+const distDir = path.resolve('dist');
+if (fs.existsSync(distDir)) {
+  app.use(express.static(distDir));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
+      return next();
+    }
+    res.sendFile(path.join(distDir, 'index.html'));
+  });
+}
 
 // Start Express Server
 app.listen(PORT, () => {
