@@ -20,6 +20,7 @@ import confetti from 'canvas-confetti';
 import type { OrderItem } from '../types';
 import { formatRupiah } from '../utils/pricing';
 import { apiUrl, parseJsonResponse } from '../utils/api';
+import { syncOrderToFirebase } from '../services/firebase';
 import { WhatsAppPreviewModal } from './WhatsAppPreviewModal';
 
 interface PaymentViewProps {
@@ -85,31 +86,63 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
 
   const handleSimulatePayment = async () => {
     setIsProcessing(true);
+    const paymentMethodName = selectedMethod === 'QRIS' ? 'QRIS Dynamic Instant' : `${selectedBank} Virtual Account`;
+    let updatedOrder: OrderItem = {
+      ...order,
+      paymentStatus: 'PAID',
+      status: 'Verifikasi Berkas',
+      paidAt: new Date().toISOString(),
+      paymentMethod: paymentMethodName,
+    };
+
     try {
       const res = await fetch(apiUrl(`/api/orders/${order.trackingCode}/pay`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          paymentMethod: selectedMethod === 'QRIS' ? 'QRIS Dynamic Instant' : `${selectedBank} Virtual Account`,
+          paymentMethod: paymentMethodName,
         }),
       });
 
       const data = await parseJsonResponse<{ order: OrderItem }>(res, 'Gagal memverifikasi pembayaran');
-
-      confetti({
-        particleCount: 110,
-        spread: 80,
-        origin: { y: 0.6 },
-        colors: ['#7d3feb', '#a773eb', '#decbf7', '#22c55e', '#ffffff'],
-      });
-
-      onPaymentSuccess(data.order);
-      setShowWaModal(true);
+      if (data.order) {
+        updatedOrder = data.order;
+      }
     } catch (err: any) {
-      alert(`Gagal: ${err.message}`);
-    } finally {
-      setIsProcessing(false);
+      console.warn('[PaymentView] Backend pay endpoint offline. Menyelesaikan pembayaran di Cloud/Lokal:', err);
     }
+
+    // Simpan status terbaru ke LocalStorage
+    try {
+      const localOrders: OrderItem[] = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
+      const idx = localOrders.findIndex((o) => o.trackingCode === updatedOrder.trackingCode);
+      if (idx !== -1) {
+        localOrders[idx] = updatedOrder;
+      } else {
+        localOrders.unshift(updatedOrder);
+      }
+      localStorage.setItem('mapcourse_local_orders', JSON.stringify(localOrders));
+    } catch (e) {
+      console.warn('LocalStorage error:', e);
+    }
+
+    // Sinkronkan ke Firebase
+    try {
+      await syncOrderToFirebase(updatedOrder);
+    } catch (e) {
+      console.warn('Firebase sync error:', e);
+    }
+
+    confetti({
+      particleCount: 110,
+      spread: 80,
+      origin: { y: 0.6 },
+      colors: ['#7d3feb', '#a773eb', '#decbf7', '#22c55e', '#ffffff'],
+    });
+
+    onPaymentSuccess(updatedOrder);
+    setShowWaModal(true);
+    setIsProcessing(false);
   };
 
   const copyToClipboard = (text: string) => {

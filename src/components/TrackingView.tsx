@@ -71,17 +71,42 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ initialTrackingCode 
     if (!codeToFetch) return;
     setLoading(true);
     setErrorMessage(null);
+    const cleanCode = codeToFetch.trim().toUpperCase();
+
     try {
-      const res = await fetch(apiUrl(`/api/orders/${encodeURIComponent(codeToFetch.trim())}`));
-      const data = await parseJsonResponse<OrderItem>(res, 'Pesanan dengan kode tracking ini tidak ditemukan.');
-      setOrder(data);
-      if (data.rating) {
-        setSelectedRating(data.rating);
-        setReviewText(data.review || '');
-        setFeedbackSuccess(true);
+      // 1. Coba ambil dari backend API
+      try {
+        const res = await fetch(apiUrl(`/api/orders/${encodeURIComponent(cleanCode)}`));
+        const data = await parseJsonResponse<OrderItem>(res, 'Pesanan dengan kode tracking ini tidak ditemukan.');
+        setOrder(data);
+        if (data.rating) {
+          setSelectedRating(data.rating);
+          setReviewText(data.review || '');
+          setFeedbackSuccess(true);
+        }
+        return;
+      } catch (err: any) {
+        console.warn('[TrackingView] Backend fetch notice:', err);
       }
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Gagal memuat status pesanan');
+
+      // 2. Fallback: Cari di local storage
+      try {
+        const localOrders: OrderItem[] = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
+        const found = localOrders.find((o) => o.trackingCode.toUpperCase() === cleanCode);
+        if (found) {
+          setOrder(found);
+          if (found.rating) {
+            setSelectedRating(found.rating);
+            setReviewText(found.review || '');
+            setFeedbackSuccess(true);
+          }
+          return;
+        }
+      } catch (e) {
+        console.warn('LocalStorage lookup error:', e);
+      }
+
+      setErrorMessage('Pesanan dengan kode tracking ini tidak ditemukan. Silakan periksa kembali kode Anda.');
       setOrder(null);
     } finally {
       setLoading(false);
