@@ -514,7 +514,7 @@ app.post('/api/orders/:code/discount', (req, res) => {
 const distDir = path.resolve('dist');
 if (fs.existsSync(distDir)) {
   app.use(express.static(distDir));
-  app.get('*', (req, res, next) => {
+  app.use((req, res, next) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
       return next();
     }
@@ -526,3 +526,4 @@ if (fs.existsSync(distDir)) {
 app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`[API Server] Running at http://0.0.0.0:${PORT}`);
 });
+
