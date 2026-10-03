@@ -523,6 +523,6 @@ if (fs.existsSync(distDir)) {
 }
 
 // Start Express Server
-app.listen(PORT, () => {
-  console.log(`[API Server] Running at http://localhost:${PORT}`);
+app.listen(Number(PORT), '0.0.0.0', () => {
+  console.log(`[API Server] Running at http://0.0.0.0:${PORT}`);
 });
