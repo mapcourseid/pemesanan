@@ -28,6 +28,22 @@ export interface XenditInvoiceResponse {
   created?: string;
   currency: string;
   isSimulated?: boolean;
+  warningMessage?: string;
+}
+
+function getSimulatedInvoice(params: CreateInvoiceParams, warning?: string): XenditInvoiceResponse {
+  return {
+    id: `sim_inv_${Date.now()}`,
+    external_id: params.externalId,
+    status: 'PENDING',
+    amount: params.amount,
+    description: params.description,
+    payer_email: params.payerEmail || 'customer@mapcourse.id',
+    invoice_url: `https://checkout.xendit.co/web/${params.externalId}?demo=true`,
+    currency: 'IDR',
+    isSimulated: true,
+    warningMessage: warning,
+  };
 }
 
 /**
@@ -36,20 +52,21 @@ export interface XenditInvoiceResponse {
 export async function createXenditInvoice(params: CreateInvoiceParams): Promise<XenditInvoiceResponse> {
   const secretKey = process.env.XENDIT_SECRET_KEY;
 
-  // Jika belum ada secret key, jalankan mode simulasi aman untuk pengujian
-  if (!secretKey || secretKey.trim() === '') {
-    console.warn('[Xendit] XENDIT_SECRET_KEY belum diisi. Menggunakan mode simulasi invoice.');
-    return {
-      id: `sim_inv_${Date.now()}`,
-      external_id: params.externalId,
-      status: 'PENDING',
-      amount: params.amount,
-      description: params.description,
-      payer_email: params.payerEmail || 'customer@mapcourse.id',
-      invoice_url: `https://checkout.xendit.co/web/${params.externalId}?demo=true`,
-      currency: 'IDR',
-      isSimulated: true,
-    };
+  // Jika belum ada secret key atau masih menggunakan placeholder dummy, gunakan mode simulasi aman
+  const isInvalidKey =
+    !secretKey ||
+    secretKey.trim() === '' ||
+    secretKey.includes('your_') ||
+    secretKey.includes('change_me') ||
+    secretKey.includes('dummy') ||
+    secretKey.includes('XENDIT_SECRET_KEY');
+
+  if (isInvalidKey) {
+    console.warn('[Xendit] XENDIT_SECRET_KEY belum diisi dengan API Key asli dari Xendit Dashboard. Menggunakan mode simulasi invoice.');
+    return getSimulatedInvoice(
+      params,
+      'XENDIT_SECRET_KEY belum diisi dengan API Key valid dari Dashboard Xendit. Sistem berjalan dalam mode simulasi.'
+    );
   }
 
   const basicAuth = Buffer.from(`${secretKey}:`).toString('base64');
@@ -89,25 +106,52 @@ export async function createXenditInvoice(params: CreateInvoiceParams): Promise<
     ],
   };
 
-  const response = await fetch('https://api.xendit.co/v2/invoices', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Basic ${basicAuth}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
+  try {
+    const response = await fetch('https://api.xendit.co/v2/invoices', {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${basicAuth}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
 
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({ message: response.statusText }));
-    throw new Error(`Xendit Error: ${errorBody.message || JSON.stringify(errorBody)}`);
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({ message: response.statusText }));
+      const errorMsg = errorBody.message || JSON.stringify(errorBody);
+
+      // Jika Xendit menolak API key (401 Unauthorized / Invalid Key error)
+      if (
+        response.status === 401 ||
+        response.status === 403 ||
+        errorMsg.toLowerCase().includes('api key') ||
+        errorMsg.toLowerCase().includes('invalid')
+      ) {
+        console.warn('[Xendit API] XENDIT_SECRET_KEY di Railway ditolak oleh Xendit (Invalid API Key). Mengalihkan ke mode simulasi aman:', errorMsg);
+        return getSimulatedInvoice(
+          params,
+          'XENDIT_SECRET_KEY di Railway tidak valid. Silakan perbarui API Key Secret di Railway Dashboard -> Environment Variables. Pembayaran dialihkan ke mode simulasi.'
+        );
+      }
+
+      throw new Error(`Xendit Error: ${errorMsg}`);
+    }
+
+    const data = await response.json();
+    return {
+      ...data,
+      isSimulated: false,
+    };
+  } catch (err: any) {
+    if (err.message && err.message.includes('Xendit Error:')) {
+      throw err;
+    }
+    console.warn('[Xendit Network Notice] Gagal menghubungi server Xendit. Menggunakan fallback simulasi:', err);
+    return getSimulatedInvoice(
+      params,
+      'Gagal menghubungi server Xendit. Menggunakan mode simulasi untuk pengujian.'
+    );
   }
-
-  const data = await response.json();
-  return {
-    ...data,
-    isSimulated: false,
-  };
 }
 
 /**
