@@ -12,12 +12,13 @@ import {
   Flame,
   UserCheck,
   ShieldCheck,
-  Plus
+  Plus,
+  FileText,
 } from 'lucide-react';
 import type { OrderItem, OrderStatus } from '../types';
 import { formatRupiah, AVAILABLE_COUPONS } from '../utils/pricing';
 import { WhatsAppPreviewModal } from './WhatsAppPreviewModal';
-import { syncOrderToFirebase } from '../services/firebase';
+import { syncOrderToFirebase, subscribeToFirebaseOrders } from '../services/firebase';
 import { apiUrl, fileUrl, parseJsonResponse } from '../utils/api';
 
 const STATUS_OPTIONS: OrderStatus[] = [
@@ -65,7 +66,21 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
   const [manualDiscountAmount, setManualDiscountAmount] = useState<number>(0);
   const [applyingDiscount, setApplyingDiscount] = useState(false);
 
+  const mergeOrders = (incoming: OrderItem[]) => {
+    if (!Array.isArray(incoming) || incoming.length === 0) return;
+    setOrders((prev) => {
+      const map = new Map<string, OrderItem>();
+      prev.forEach((o) => map.set(o.trackingCode.toUpperCase(), o));
+      incoming.forEach((o) => map.set(o.trackingCode.toUpperCase(), o));
+      const list = Array.from(map.values()).sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      return list;
+    });
+  };
+
   const fetchOrdersAndStats = async () => {
+    // 1. Coba ambil dari backend Express API
     try {
       const [ordersRes, statsRes] = await Promise.all([
         fetch(apiUrl('/api/orders')),
@@ -73,23 +88,49 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
       ]);
       const ordersData = await parseJsonResponse<OrderItem[]>(ordersRes, 'Gagal memuat daftar pesanan');
       const statsData = await parseJsonResponse<any>(statsRes, 'Gagal memuat statistik');
-      setOrders(ordersData);
-      setStats(statsData);
-
-      if (selectedOrder) {
-        const fresh = ordersData.find((o: OrderItem) => o.id === selectedOrder.id);
-        if (fresh) setSelectedOrder(fresh);
-      } else if (ordersData.length > 0) {
-        setSelectedOrder(ordersData[0]);
+      if (Array.isArray(ordersData)) {
+        mergeOrders(ordersData);
       }
+      setStats(statsData);
     } catch (err) {
-      console.error('Error fetching GIS internal data:', err);
+      console.warn('Notice backend API offline, sinkronisasi via Firebase & LocalStorage aktif:', err);
+    }
+
+    // 2. Ambil dari LocalStorage untuk pesanan yang dibuat di browser lokal
+    try {
+      const localOrders: OrderItem[] = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
+      if (Array.isArray(localOrders) && localOrders.length > 0) {
+        mergeOrders(localOrders);
+      }
+    } catch (e) {
+      console.warn('LocalStorage error:', e);
     }
   };
 
   useEffect(() => {
     fetchOrdersAndStats();
+
+    // 3. Realtime Listener ke Firebase Realtime Database
+    const unsubscribeFirebase = subscribeToFirebaseOrders((fbOrders) => {
+      if (Array.isArray(fbOrders) && fbOrders.length > 0) {
+        mergeOrders(fbOrders);
+      }
+    });
+
+    return () => {
+      if (unsubscribeFirebase) unsubscribeFirebase();
+    };
   }, []);
+
+  // Update selectedOrder jika ada update
+  useEffect(() => {
+    if (!selectedOrder && orders.length > 0) {
+      setSelectedOrder(orders[0]);
+    } else if (selectedOrder) {
+      const fresh = orders.find((o) => o.trackingCode.toUpperCase() === selectedOrder.trackingCode.toUpperCase());
+      if (fresh) setSelectedOrder(fresh);
+    }
+  }, [orders]);
 
   // Real-Time Server-Sent Events (SSE)
   useEffect(() => {
@@ -97,10 +138,7 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
     eventSource.addEventListener('order_updated', (e: MessageEvent) => {
       try {
         const updated: OrderItem = JSON.parse(e.data);
-        setOrders((prev) =>
-          prev.map((item) => (item.id === updated.id ? updated : item))
-        );
-        setSelectedOrder((prev) => (prev && prev.id === updated.id ? updated : prev));
+        mergeOrders([updated]);
       } catch (err) {
         console.error('SSE Error:', err);
       }
@@ -109,7 +147,7 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
     eventSource.addEventListener('order_created', (e: MessageEvent) => {
       try {
         const created: OrderItem = JSON.parse(e.data);
-        setOrders((prev) => [created, ...prev]);
+        mergeOrders([created]);
       } catch (err) {
         console.error('SSE Error:', err);
       }
@@ -470,50 +508,96 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
                 </h3>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-                    <span className="text-slate-500">Legalitas Lahan:</span>
-                    <div className="font-bold text-slate-900">
-                      {selectedOrder.landOwnershipStatus} ({selectedOrder.landOwnershipType || 'N/A'})
+                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 font-medium">Legalitas Lahan:</span>
+                      <span className="font-bold text-slate-900">
+                        {selectedOrder.landOwnershipStatus} ({selectedOrder.landOwnershipType || 'N/A'})
+                      </span>
                     </div>
-                    {selectedOrder.landDocumentUrl && (
-                      <a
-                        href={selectedOrder.landDocumentUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-[#7d3feb] hover:underline font-bold mt-1"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Unduh Sertifikat Lahan</span>
-                      </a>
+
+                    {selectedOrder.landDocumentUrl ? (
+                      <div className="pt-2 border-t border-slate-200/80 space-y-1.5">
+                        <div className="text-[11px] text-slate-600 font-medium truncate flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                          <span className="truncate">{selectedOrder.landDocumentName || 'Dokumen_Legalitas_Lahan.pdf'}</span>
+                        </div>
+                        <a
+                          href={fileUrl(selectedOrder.landDocumentUrl)}
+                          download={selectedOrder.landDocumentName || `Berkas_Legalitas_${selectedOrder.trackingCode}.pdf`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center gap-1.5 w-full py-1.5 px-3 bg-[#7d3feb] hover:bg-[#6f2cdb] text-white rounded-lg text-xs font-bold transition shadow-sm"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Unduh Berkas Legalitas Lahan</span>
+                        </a>
+                      </div>
+                    ) : (
+                      <div className="pt-1 text-[11px] text-slate-400 italic">
+                        {selectedOrder.landDocumentName ? (
+                          <span>File: {selectedOrder.landDocumentName} (Menunggu upload fisik)</span>
+                        ) : (
+                          <span>Belum ada berkas dokumen fisik yang diunggah</span>
+                        )}
+                      </div>
                     )}
                   </div>
 
                   <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-                    <span className="text-slate-500">KBLI & Bangunan:</span>
+                    <span className="text-slate-500 font-medium">KBLI & Bangunan:</span>
                     <div className="font-bold text-slate-900">
                       {selectedOrder.kbliCode} - {selectedOrder.kbliName}
                     </div>
                     <div className="text-slate-600">
                       {selectedOrder.buildingCount} Unit • {selectedOrder.buildingFloors} Lt • {selectedOrder.buildingHeightMeters}m
                     </div>
+                    <div className="text-[11px] text-slate-500 pt-1">
+                      Status IMB: <strong>{selectedOrder.imbStatus || 'Belum Memiliki'}</strong>
+                    </div>
                   </div>
                 </div>
 
-                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                   <div>
-                    <span className="font-bold text-slate-800 block">Draf Polygon Awal Customer:</span>
+                    <span className="font-bold text-slate-800 block">Draf Polygon / Geometri Customer:</span>
                     <span className="text-slate-500 text-[11px]">
-                      {selectedOrder.hasPolygon ? 'Shapefile .zip diunggah customer' : 'Koordinat titik lat/lng'}
+                      {selectedOrder.hasPolygon
+                        ? (selectedOrder.polygonShapefileUrl ? 'File Shapefile (.ZIP) diunggah customer' : 'Polygon GeoJSON tersedia')
+                        : `Titik Koordinat: ${selectedOrder.coordinates?.lat?.toFixed(5) || '-'}, ${selectedOrder.coordinates?.lng?.toFixed(5) || '-'}`}
                     </span>
                   </div>
-                  <a
-                    href={fileUrl(selectedOrder.gisResultFiles?.geoJsonUrl || '/uploads/samples/sample_polygon.geojson')}
-                    download={`Draf_Polygon_${selectedOrder.trackingCode}.geojson`}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg font-bold text-slate-700 shadow-sm"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Unduh Geometri Draf</span>
-                  </a>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {selectedOrder.polygonShapefileUrl && (
+                      <a
+                        href={fileUrl(selectedOrder.polygonShapefileUrl)}
+                        download={`Raw_Shapefile_${selectedOrder.trackingCode}.zip`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#7d3feb] hover:bg-[#6f2cdb] text-white rounded-lg font-bold shadow-sm"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Unduh .ZIP Asli</span>
+                      </a>
+                    )}
+                    {selectedOrder.polygonGeoJson ? (
+                      <a
+                        href={`data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(selectedOrder.polygonGeoJson, null, 2))}`}
+                        download={`Polygon_GeoJSON_${selectedOrder.trackingCode}.geojson`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg font-bold text-slate-700 shadow-sm"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Unduh .GeoJSON</span>
+                      </a>
+                    ) : (
+                      <a
+                        href={fileUrl(selectedOrder.gisResultFiles?.geoJsonUrl || '/uploads/samples/sample_polygon.geojson')}
+                        download={`Draf_Polygon_${selectedOrder.trackingCode}.geojson`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg font-bold text-slate-700 shadow-sm"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Unduh Geometri Draf</span>
+                      </a>
+                    )}
+                  </div>
                 </div>
               </div>
 
