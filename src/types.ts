@@ -107,6 +107,7 @@ export interface OrderItem {
   // Calculated Queue Info
   queuePosition?: number;
   aheadCount?: number;
+  notes?: string;
 }
 
 export interface PromoCoupon {

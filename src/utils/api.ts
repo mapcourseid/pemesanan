@@ -3,7 +3,11 @@
  * - Development: menggunakan Vite proxy (string kosong) ke http://localhost:3001
  * - Production: menggunakan VITE_API_URL dari environment variable (misal https://xxx.up.railway.app)
  */
-export const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
+export const RAW_API_BASE_URL = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+// Jika user mengisi VITE_API_URL dengan '/api' di ujungnya (misal https://app.up.railway.app/api), hapus '/api' agar tidak menjadi /api/api
+export const API_BASE_URL = RAW_API_BASE_URL.endsWith('/api')
+  ? RAW_API_BASE_URL.slice(0, -4)
+  : RAW_API_BASE_URL;
 
 /**
  * Buat URL API lengkap.
@@ -21,7 +25,9 @@ export function apiUrl(path: string): string {
  */
 export function fileUrl(path?: string): string {
   if (!path) return '';
-  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  if (path.startsWith('data:') || path.startsWith('blob:') || path.startsWith('http://') || path.startsWith('https://')) {
+    return path;
+  }
   return apiUrl(path);
 }
 
@@ -44,7 +50,7 @@ export async function apiFetch(
 /**
  * Parse respons JSON secara aman.
  * Jika server mengembalikan HTML (misal 404 dari Netlify/Vercel karena VITE_API_URL belum diset),
- * fungsi ini memberikan pesan kesalahan yang jelas dan mudah dipahami alih-alih error "Unexpected token <".
+ * fungsi ini memberikan pesan kesalahan yang jelas dan mudah dipahami.
  */
 export async function parseJsonResponse<T = any>(
   res: Response,
@@ -53,9 +59,14 @@ export async function parseJsonResponse<T = any>(
   const contentType = res.headers.get('content-type') || '';
 
   if (!contentType.includes('application/json')) {
+    if (res.status === 404) {
+      throw new Error(
+        `Backend server mengembalikan status 404 (Not Found) untuk URL: ${res.url}. Pastikan backend Railway aktif, domain publik sudah di-generate di Railway (Settings > Networking > Generate Domain), dan variabel VITE_API_URL di Netlify/Vercel sudah diset dengan benar.`
+      );
+    }
     if (!res.ok) {
       throw new Error(
-        `Backend server mengembalikan status ${res.status} (${res.statusText}). Pastikan backend Railway aktif.`
+        `Backend server mengembalikan status ${res.status} (${res.statusText || 'Error'}). Pastikan backend Railway aktif.`
       );
     }
     throw new Error(
