@@ -14,13 +14,13 @@ import type { OrderItem } from '../types';
 // Otomatis terhubung langsung ke Firebase Realtime Database
 // =========================================================
 export const FIREBASE_CONFIG = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyBgfAtedQdcgYLaR2K8Sv6Zpc-lk4xuPLw',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'pemesanan-688f7.firebaseapp.com',
-  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL || 'https://pemesanan-688f7-default-rtdb.asia-southeast1.firebasedatabase.app',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'pemesanan-688f7',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'pemesanan-688f7.firebasestorage.app',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '800700379411',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:800700379411:web:dad5bd4d1356b4baf1eae6',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
+  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL || '',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
 };
 
 let dbInstance: Database | null = null;
@@ -43,7 +43,7 @@ export function initFirebaseService(): boolean {
     }
     
     _isConnected = true;
-    console.log('[Firebase] ✅ Realtime Database pemesanan-688f7 terhubung otomatis!');
+    console.log('[Firebase] ✅ Realtime Database terhubung otomatis!');
     return true;
   } catch (err) {
     console.warn('[Firebase] Inisialisasi notice:', err);
