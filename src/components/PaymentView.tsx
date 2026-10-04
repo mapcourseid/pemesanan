@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   CreditCard, 
   QrCode, 
@@ -14,9 +14,12 @@ import {
   ShieldCheck,
   Tag,
   ExternalLink,
-  Zap
+  Zap,
+  FileDown
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 import type { OrderItem } from '../types';
 import { formatRupiah } from '../utils/pricing';
 import { apiUrl, parseJsonResponse } from '../utils/api';
@@ -41,6 +44,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
   const [showWaModal, setShowWaModal] = useState(false);
   const [isXenditLoading, setIsXenditLoading] = useState(false);
   const [xenditUrl, setXenditUrl] = useState<string | null>(order?.xenditInvoiceUrl || null);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
   const handlePayWithXendit = async () => {
     if (!order) return;
@@ -62,11 +66,18 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
         window.open(data.invoiceUrl, '_blank', 'noopener,noreferrer');
       }
     } catch (err: any) {
-      alert(`Xendit Payment: ${err.message}`);
+      console.warn('[PaymentView] Xendit auto-trigger notice:', err);
     } finally {
       setIsXenditLoading(false);
     }
   };
+
+  // Requirement 2: Setelah pengisian formulir, otomatis panggil Xendit
+  useEffect(() => {
+    if (order && order.paymentStatus === 'UNPAID' && !xenditUrl && !isXenditLoading) {
+      handlePayWithXendit();
+    }
+  }, [order?.trackingCode]);
 
   if (!order) {
     return (
@@ -157,6 +168,44 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
 
   const handlePrintInvoice = () => {
     window.print();
+  };
+
+  const handleDownloadPdfReceipt = async () => {
+    if (!order) return;
+    setIsDownloadingPdf(true);
+    const el = document.getElementById('printable-invoice');
+    if (!el) {
+      window.print();
+      setIsDownloadingPdf(false);
+      return;
+    }
+    try {
+      const canvas = await html2canvas(el, { scale: 2, useCORS: true, logging: false });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgWidth = 210;
+      const pageHeight = 297;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft >= 20) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      pdf.save(`Resi_Antrean_${order.trackingCode}.pdf`);
+    } catch (e) {
+      console.warn('PDF generation notice, falling back to print:', e);
+      window.print();
+    } finally {
+      setIsDownloadingPdf(false);
+    }
   };
 
   return (
@@ -466,13 +515,22 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
+              <button
+                onClick={handleDownloadPdfReceipt}
+                disabled={isDownloadingPdf}
+                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow transition"
+              >
+                <FileDown className="w-4 h-4" />
+                <span>{isDownloadingPdf ? 'Memproses PDF...' : 'Download PDF Kode Tracking'}</span>
+              </button>
+
               <button
                 onClick={() => setShowWaModal(true)}
                 className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-[#7d3feb] hover:bg-[#6f2cdb] text-white rounded-xl text-xs font-bold shadow transition"
               >
                 <MessageSquare className="w-4 h-4" />
-                <span>Lihat Notifikasi WhatsApp</span>
+                <span>WhatsApp Resi</span>
               </button>
 
               <button

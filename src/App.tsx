@@ -7,7 +7,7 @@ import { GisInternalDashboard } from './components/GisInternalDashboard';
 import { StaffLoginModal } from './components/StaffLoginModal';
 import type { OrderItem } from './types';
 import { ShieldCheck, Flame, Lock } from 'lucide-react';
-import { initFirebaseService } from './services/firebase';
+import { initFirebaseService, logoutStaffWithFirebase, onStaffAuthStateChanged } from './services/firebase';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<'order' | 'payment' | 'tracking' | 'internal'>('order');
@@ -22,10 +22,21 @@ export function App() {
   // Firebase Realtime State
   const [isFirebaseActive, setIsFirebaseActive] = useState<boolean>(false);
 
-  // Initialize Firebase
+  // Initialize Firebase & Auth listener
   useEffect(() => {
     const fbConnected = initFirebaseService();
     setIsFirebaseActive(fbConnected);
+
+    const unsubscribeAuth = onStaffAuthStateChanged((user) => {
+      if (user) {
+        setIsStaffLoggedIn(true);
+        setStaffUser(user);
+      }
+    });
+
+    return () => {
+      if (unsubscribeAuth) unsubscribeAuth();
+    };
   }, []);
 
   const handleOrderCreated = (order: OrderItem) => {
@@ -51,7 +62,8 @@ export function App() {
     setActiveTab('internal');
   };
 
-  const handleStaffLogout = () => {
+  const handleStaffLogout = async () => {
+    await logoutStaffWithFirebase();
     setIsStaffLoggedIn(false);
     setStaffUser(null);
     if (activeTab === 'internal') {

@@ -18,6 +18,7 @@ import { LeafletMapPreview } from './LeafletMapPreview';
 import { formatRupiah } from '../utils/pricing';
 import { apiUrl, fileUrl, parseJsonResponse } from '../utils/api';
 import { WhatsAppPreviewModal } from './WhatsAppPreviewModal';
+import { fetchSingleOrderFromFirebase, syncOrderToFirebase } from '../services/firebase';
 
 interface TrackingViewProps {
   initialTrackingCode?: string;
@@ -78,18 +79,46 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ initialTrackingCode 
       try {
         const res = await fetch(apiUrl(`/api/orders/${encodeURIComponent(cleanCode)}`));
         const data = await parseJsonResponse<OrderItem>(res, 'Pesanan dengan kode tracking ini tidak ditemukan.');
-        setOrder(data);
-        if (data.rating) {
-          setSelectedRating(data.rating);
-          setReviewText(data.review || '');
-          setFeedbackSuccess(true);
+        if (data && data.trackingCode) {
+          setOrder(data);
+          if (data.rating) {
+            setSelectedRating(data.rating);
+            setReviewText(data.review || '');
+            setFeedbackSuccess(true);
+          }
+          return;
         }
-        return;
       } catch (err: any) {
-        console.warn('[TrackingView] Backend fetch notice:', err);
+        console.warn('[TrackingView] Backend fetch notice (will check Firebase & Local):', err);
       }
 
-      // 2. Fallback: Cari di local storage
+      // 2. Ambil langsung dari Firebase Realtime Database (solusi jika dibuka dari device berbeda)
+      try {
+        const fbOrder = await fetchSingleOrderFromFirebase(cleanCode);
+        if (fbOrder) {
+          setOrder(fbOrder);
+          if (fbOrder.rating) {
+            setSelectedRating(fbOrder.rating);
+            setReviewText(fbOrder.review || '');
+            setFeedbackSuccess(true);
+          }
+          try {
+            const localOrders: OrderItem[] = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
+            const idx = localOrders.findIndex((o) => o.trackingCode.toUpperCase() === cleanCode);
+            if (idx !== -1) {
+              localOrders[idx] = fbOrder;
+            } else {
+              localOrders.unshift(fbOrder);
+            }
+            localStorage.setItem('mapcourse_local_orders', JSON.stringify(localOrders));
+          } catch (e) {}
+          return;
+        }
+      } catch (e) {
+        console.warn('Firebase single fetch notice:', e);
+      }
+
+      // 3. Fallback: Cari di local storage
       try {
         const localOrders: OrderItem[] = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
         const found = localOrders.find((o) => o.trackingCode.toUpperCase() === cleanCode);
@@ -148,17 +177,42 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ initialTrackingCode 
     e.preventDefault();
     if (!order) return;
     setIsSubmittingFeedback(true);
+
+    const updated: OrderItem = {
+      ...order,
+      rating: selectedRating,
+      review: reviewText,
+      feedbackSubmittedAt: new Date().toISOString(),
+    };
+    setOrder(updated);
+    setFeedbackSuccess(true);
+
+    // 1. Simpan ke local storage
     try {
-      const res = await fetch(apiUrl(`/api/orders/${order.trackingCode}/feedback`), {
+      const localOrders: OrderItem[] = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
+      const idx = localOrders.findIndex((o) => o.trackingCode.toUpperCase() === updated.trackingCode.toUpperCase());
+      if (idx !== -1) {
+        localOrders[idx] = updated;
+      } else {
+        localOrders.unshift(updated);
+      }
+      localStorage.setItem('mapcourse_local_orders', JSON.stringify(localOrders));
+    } catch (e) {
+      console.warn('LocalStorage save notice:', e);
+    }
+
+    // 2. Sinkronkan ke Firebase Realtime DB
+    syncOrderToFirebase(updated);
+
+    // 3. Opsional ke backend API
+    try {
+      await fetch(apiUrl(`/api/orders/${order.trackingCode}/feedback`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rating: selectedRating, review: reviewText }),
       });
-      const data = await parseJsonResponse<{ order: OrderItem }>(res, 'Gagal mengirimkan ulasan');
-      setOrder(data.order);
-      setFeedbackSuccess(true);
     } catch (err: any) {
-      alert(`Error: ${err.message}`);
+      console.warn('[TrackingView] Backend feedback notice (tersimpan via Cloud & Lokal):', err);
     } finally {
       setIsSubmittingFeedback(false);
     }

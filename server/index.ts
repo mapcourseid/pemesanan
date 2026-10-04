@@ -510,6 +510,31 @@ app.post('/api/orders/:code/discount', (req, res) => {
   res.json({ success: true, order });
 });
 
+// Update / Edit order project endpoint (Staff Dashboard)
+app.put('/api/orders/:code', (req, res) => {
+  const code = req.params.code.trim().toUpperCase();
+  const index = orders.findIndex((o) => o.trackingCode.toUpperCase() === code);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Pesanan tidak ditemukan' });
+  }
+
+  const updatedOrder = { ...orders[index], ...req.body };
+  orders[index] = updatedOrder;
+  broadcastUpdate('order_updated', updatedOrder);
+  res.json({ success: true, order: updatedOrder });
+});
+
+// Delete order project endpoint (Staff Dashboard)
+app.delete('/api/orders/:code', (req, res) => {
+  const code = req.params.code.trim().toUpperCase();
+  const index = orders.findIndex((o) => o.trackingCode.toUpperCase() === code);
+  if (index !== -1) {
+    orders.splice(index, 1);
+    broadcastUpdate('order_deleted', { trackingCode: code });
+  }
+  res.json({ success: true, deletedCode: code });
+});
+
 // Serve frontend static build if present (e.g. when deployed to Railway as fullstack)
 const distDir = path.resolve('dist');
 if (fs.existsSync(distDir)) {

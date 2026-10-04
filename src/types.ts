@@ -104,6 +104,10 @@ export interface OrderItem {
     sender: string;
   }>;
 
+  // Jadwal Pengerjaan Tim GIS
+  workStartDate?: string;
+  estimatedEndDate?: string;
+
   // Calculated Queue Info
   queuePosition?: number;
   aheadCount?: number;

@@ -14,11 +14,21 @@ import {
   ShieldCheck,
   Plus,
   FileText,
+  Edit,
+  Trash2,
+  Calendar,
+  List,
+  X,
+  Clock,
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  CheckCircle2
 } from 'lucide-react';
 import type { OrderItem, OrderStatus } from '../types';
 import { formatRupiah, AVAILABLE_COUPONS } from '../utils/pricing';
 import { WhatsAppPreviewModal } from './WhatsAppPreviewModal';
-import { syncOrderToFirebase, subscribeToFirebaseOrders } from '../services/firebase';
+import { syncOrderToFirebase, subscribeToFirebaseOrders, deleteOrderFromFirebase } from '../services/firebase';
 import { apiUrl, fileUrl, parseJsonResponse } from '../utils/api';
 
 const STATUS_OPTIONS: OrderStatus[] = [
@@ -42,6 +52,14 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
   const [orders, setOrders] = useState<OrderItem[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [selectedOrder, setSelectedOrder] = useState<OrderItem | null>(null);
+
+  // View Mode: 'LIST' or 'CALENDAR' (Requirement 6)
+  const [viewMode, setViewMode] = useState<'LIST' | 'CALENDAR'>('LIST');
+  const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
+
+  // Edit & Delete Modals (Requirement 4)
+  const [editingOrder, setEditingOrder] = useState<OrderItem | null>(null);
+  const [deletingOrder, setDeletingOrder] = useState<OrderItem | null>(null);
 
   // Filters
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
@@ -327,6 +345,88 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
     }
   };
 
+  // Requirement 5: Fix download Polygon / Geometri Customer (Blob object URL)
+  const handleDownloadCustomerPolygon = (geoJsonData: any, trackingCode: string) => {
+    try {
+      if (!geoJsonData) {
+        alert('Data geometri polygon tidak ditemukan.');
+        return;
+      }
+      const jsonStr = typeof geoJsonData === 'string' ? geoJsonData : JSON.stringify(geoJsonData, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Polygon_Customer_${trackingCode}.geojson`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 500);
+    } catch (e: any) {
+      alert(`Gagal mengunduh file polygon: ${e.message}`);
+    }
+  };
+
+  // Requirement 4: Edit Project Handler
+  const handleSaveEditProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingOrder) return;
+
+    const updated = { ...editingOrder };
+    persistOrderLocallyAndCloud(updated);
+    setEditingOrder(null);
+
+    try {
+      await fetch(apiUrl(`/api/orders/${updated.trackingCode}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated),
+      });
+      alert(`Data proyek ${updated.companyName} (${updated.trackingCode}) berhasil diperbarui!`);
+    } catch (err: any) {
+      console.warn('Backend edit project notice:', err);
+      alert(`Data proyek ${updated.companyName} berhasil diperbarui (tersinkron ke Cloud & Lokal)!`);
+    }
+  };
+
+  // Requirement 4: Delete Project Handler
+  const handleDeleteProject = async (orderToDelete: OrderItem) => {
+    const code = orderToDelete.trackingCode.toUpperCase();
+    setOrders((prev) => prev.filter((o) => o.trackingCode.toUpperCase() !== code));
+    if (selectedOrder?.trackingCode.toUpperCase() === code) {
+      setSelectedOrder(null);
+    }
+    setDeletingOrder(null);
+
+    // Remove from local storage
+    try {
+      const localOrders: OrderItem[] = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
+      const filtered = localOrders.filter((o) => o.trackingCode.toUpperCase() !== code);
+      localStorage.setItem('mapcourse_local_orders', JSON.stringify(filtered));
+    } catch (e) {}
+
+    // Remove from Firebase
+    await deleteOrderFromFirebase(code);
+
+    // Remove from backend API
+    try {
+      await fetch(apiUrl(`/api/orders/${code}`), { method: 'DELETE' });
+    } catch (e) {}
+
+    alert(`Proyek ${orderToDelete.companyName} (${code}) berhasil dihapus.`);
+  };
+
+  // Requirement 6: Timeline dates updater
+  const handleSaveTimelineDates = (startDate?: string, endDate?: string) => {
+    if (!selectedOrder) return;
+    const updated: OrderItem = {
+      ...selectedOrder,
+      workStartDate: startDate || selectedOrder.workStartDate,
+      estimatedEndDate: endDate || selectedOrder.estimatedEndDate,
+    };
+    persistOrderLocallyAndCloud(updated);
+  };
+
   const filteredOrders = orders.filter((o) => {
     const matchesFilter = filterStatus === 'ALL' || o.status === filterStatus;
     const matchesSearch =
@@ -335,6 +435,148 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
       o.queueNumber.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesFilter && matchesSearch;
   });
+
+  // Calendar View Helper (Requirement 6)
+  const renderCalendarView = () => {
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+
+    let startDayIdx = firstDay.getDay() - 1;
+    if (startDayIdx < 0) startDayIdx = 6;
+
+    const daysArray = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+
+    const monthNames = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+
+    const prevMonth = () => setCalendarMonth(new Date(year, month - 1, 1));
+    const nextMonth = () => setCalendarMonth(new Date(year, month + 1, 1));
+
+    return (
+      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-6 animate-fadeIn">
+        {/* Calendar Header */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+          <div>
+            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-[#7d3feb]" />
+              Kalender Jadwal & Estimasi Selesai Proyek Tim GIS
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Klik pada nama proyek di kalender untuk melihat detail & pengerjaan
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={prevMonth}
+              className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-700 transition"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="font-bold text-slate-800 text-sm font-mono min-w-[120px] text-center">
+              {monthNames[month]} {year}
+            </span>
+            <button
+              onClick={nextMonth}
+              className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-700 transition"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Days Header */}
+        <div className="grid grid-cols-7 gap-2 text-center text-xs font-bold text-slate-500 uppercase tracking-wider pb-2 border-b border-slate-100">
+          <div>Sen</div>
+          <div>Sel</div>
+          <div>Rab</div>
+          <div>Kam</div>
+          <div>Jum</div>
+          <div>Sab</div>
+          <div>Min</div>
+        </div>
+
+        {/* Grid Days */}
+        <div className="grid grid-cols-7 gap-2">
+          {Array.from({ length: startDayIdx }).map((_, i) => (
+            <div key={`empty-${i}`} className="min-h-[90px] p-2 bg-slate-50/50 rounded-2xl border border-slate-100/50 opacity-40" />
+          ))}
+
+          {daysArray.map((dayNum) => {
+            const dayDate = new Date(year, month, dayNum);
+
+            const dayProjects = orders.filter((ord) => {
+              const start = ord.workStartDate ? new Date(ord.workStartDate) : new Date(ord.createdAt);
+              const end = ord.estimatedEndDate ? new Date(ord.estimatedEndDate) : start;
+
+              const dTime = new Date(year, month, dayNum).setHours(0,0,0,0);
+              const sTime = new Date(start).setHours(0,0,0,0);
+              const eTime = new Date(end).setHours(0,0,0,0);
+
+              return dTime >= sTime && dTime <= eTime;
+            });
+
+            const isToday = new Date().toDateString() === dayDate.toDateString();
+
+            return (
+              <div
+                key={dayNum}
+                className={`min-h-[100px] p-2 rounded-2xl border transition flex flex-col justify-between ${
+                  isToday
+                    ? 'bg-purple-50/60 border-[#7d3feb] shadow-sm'
+                    : 'bg-white border-slate-200 hover:border-purple-300'
+                }`}
+              >
+                <div className="flex justify-between items-center mb-1">
+                  <span className={`text-xs font-bold ${isToday ? 'bg-[#7d3feb] text-white px-2 py-0.5 rounded-full' : 'text-slate-700'}`}>
+                    {dayNum}
+                  </span>
+                  {dayProjects.length > 0 && (
+                    <span className="text-[10px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded-full">
+                      {dayProjects.length} Proyek
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-1 overflow-y-auto max-h-[80px] custom-scrollbar">
+                  {dayProjects.map((proj) => {
+                    const isSelected = selectedOrder?.trackingCode === proj.trackingCode;
+                    return (
+                      <div
+                        key={proj.trackingCode}
+                        onClick={() => {
+                          setSelectedOrder(proj);
+                          setViewMode('LIST');
+                        }}
+                        title={`${proj.companyName} (${proj.status})`}
+                        className={`p-1.5 rounded-xl text-[10px] font-bold cursor-pointer truncate transition ${
+                          isSelected
+                            ? 'bg-[#7d3feb] text-white shadow-sm'
+                            : proj.status === 'Selesai'
+                            ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                            : proj.status === 'Quality Control'
+                            ? 'bg-amber-100 text-amber-900 hover:bg-amber-200'
+                            : 'bg-purple-100 text-purple-900 hover:bg-purple-200'
+                        }`}
+                      >
+                        <div className="truncate">{proj.companyName}</div>
+                        <div className="text-[9px] opacity-80 truncate">{proj.trackingCode}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-20">
@@ -415,9 +657,44 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
         </div>
       )}
 
-      {/* Main Content Layout: Table & Workstation */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Order Queue List (5 cols) */}
+      {/* View Mode Toggle: List vs Calendar */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-4 rounded-3xl border border-slate-200 shadow-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-slate-800">Mode Tampilan Dashboard Staf:</span>
+          <span className="text-xs text-slate-500">Pilih antara tampilan antrean daftar list atau tampilan kalender jadwal</span>
+        </div>
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl w-full sm:w-auto">
+          <button
+            onClick={() => setViewMode('LIST')}
+            className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
+              viewMode === 'LIST'
+                ? 'bg-white text-[#7d3feb] shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <List className="w-4 h-4" />
+            <span>Daftar Proyek & Detail</span>
+          </button>
+          <button
+            onClick={() => setViewMode('CALENDAR')}
+            className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
+              viewMode === 'CALENDAR'
+                ? 'bg-white text-[#7d3feb] shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Calendar className="w-4 h-4" />
+            <span>Kalender Jadwal Proyek</span>
+          </button>
+        </div>
+      </div>
+
+      {viewMode === 'CALENDAR' ? (
+        renderCalendarView()
+      ) : (
+        /* Main Content Layout: Table & Workstation */
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Left Column: Order Queue List (5 cols) */}
         <div className="lg:col-span-5 space-y-4">
           <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-4">
             {/* Search & Filters */}
@@ -530,13 +807,67 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
                   </div>
                 </div>
 
-                <button
-                  onClick={() => onSelectOrderForTracking(selectedOrder.trackingCode)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
-                >
-                  <span>Buka Live Tracking Pelanggan</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => setEditingOrder(selectedOrder)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-[#7d3feb] border border-purple-200 text-xs font-bold rounded-xl transition"
+                  >
+                    <Edit className="w-3.5 h-3.5" />
+                    <span>Edit Proyek</span>
+                  </button>
+
+                  <button
+                    onClick={() => setDeletingOrder(selectedOrder)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Hapus</span>
+                  </button>
+
+                  <button
+                    onClick={() => onSelectOrderForTracking(selectedOrder.trackingCode)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
+                  >
+                    <span>Live Tracking</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Requirement 6: Timeline Pengerjaan & Estimasi Selesai */}
+              <div className="p-4 bg-purple-50/50 rounded-2xl border border-purple-200 space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-purple-950">
+                  <span className="flex items-center gap-1.5">
+                    <Calendar className="w-4 h-4 text-[#7d3feb]" />
+                    Jadwal Timeline Pengerjaan & Estimasi Selesai Proyek:
+                  </span>
+                  {selectedOrder.estimatedEndDate && (
+                    <span className="text-[11px] font-mono text-purple-700">
+                      Target: {new Date(selectedOrder.estimatedEndDate).toLocaleDateString('id-ID', { dateStyle: 'medium' })}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Tanggal Mulai Kerja:</label>
+                    <input
+                      type="date"
+                      value={selectedOrder.workStartDate ? selectedOrder.workStartDate.slice(0, 10) : ''}
+                      onChange={(e) => handleSaveTimelineDates(e.target.value, selectedOrder.estimatedEndDate)}
+                      className="w-full p-2 bg-white border border-purple-200 rounded-xl text-xs font-semibold text-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Estimasi Selesai (Target):</label>
+                    <input
+                      type="date"
+                      value={selectedOrder.estimatedEndDate ? selectedOrder.estimatedEndDate.slice(0, 10) : ''}
+                      onChange={(e) => handleSaveTimelineDates(selectedOrder.workStartDate, e.target.value)}
+                      className="w-full p-2 bg-white border border-purple-200 rounded-xl text-xs font-semibold text-slate-800"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* 1. Pengendali Status Real-Time */}
@@ -652,14 +983,14 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
                       </a>
                     )}
                     {selectedOrder.polygonGeoJson ? (
-                      <a
-                        href={`data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(selectedOrder.polygonGeoJson, null, 2))}`}
-                        download={`Polygon_GeoJSON_${selectedOrder.trackingCode}.geojson`}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg font-bold text-slate-700 shadow-sm"
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadCustomerPolygon(selectedOrder.polygonGeoJson, selectedOrder.trackingCode)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg font-bold text-slate-700 shadow-sm transition"
                       >
-                        <Download className="w-3.5 h-3.5" />
+                        <Download className="w-3.5 h-3.5 text-[#7d3feb]" />
                         <span>Unduh .GeoJSON</span>
-                      </a>
+                      </button>
                     ) : (
                       <a
                         href={fileUrl(selectedOrder.gisResultFiles?.geoJsonUrl || '/uploads/samples/sample_polygon.geojson')}
@@ -793,6 +1124,187 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
           )}
         </div>
       </div>
+      )}
+
+      {/* Requirement 4: Edit Project Modal */}
+      {editingOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full overflow-hidden border border-slate-200 max-h-[90vh] flex flex-col">
+            <div className="bg-gradient-to-r from-[#7d3feb] to-[#4e1e9c] text-white p-5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Edit className="w-5 h-5" />
+                <h3 className="font-bold text-base">Edit Proyek Pemetaan ({editingOrder.trackingCode})</h3>
+              </div>
+              <button
+                onClick={() => setEditingOrder(null)}
+                className="text-white/80 hover:text-white p-1 rounded-full hover:bg-black/10"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditProject} className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Nama Perusahaan / Pemohon</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingOrder.companyName}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, companyName: e.target.value })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Nama PIC Kontak</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingOrder.contactName}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, contactName: e.target.value })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">No. WhatsApp / HP</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingOrder.contactPhone}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, contactPhone: e.target.value })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Status Pengerjaan Proyek</label>
+                  <select
+                    value={editingOrder.status}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, status: e.target.value as OrderStatus })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-[#7d3feb]"
+                  >
+                    {STATUS_OPTIONS.map((st) => (
+                      <option key={st} value={st}>{st}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Status Pembayaran</label>
+                  <select
+                    value={editingOrder.paymentStatus}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, paymentStatus: e.target.value as any })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold"
+                  >
+                    <option value="UNPAID">Belum Dibayar (UNPAID)</option>
+                    <option value="PAID">Lunas (PAID)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Luas Lahan (m²)</label>
+                  <input
+                    type="number"
+                    required
+                    value={editingOrder.areaSizeM2}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, areaSizeM2: Number(e.target.value) })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono"
+                  />
+                </div>
+
+                {/* Requirement 6: Timeline dates */}
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Tanggal Mulai Pekerjaan</label>
+                  <input
+                    type="date"
+                    value={editingOrder.workStartDate ? editingOrder.workStartDate.slice(0, 10) : ''}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, workStartDate: e.target.value })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Estimasi Selesai Pekerjaan</label>
+                  <input
+                    type="date"
+                    value={editingOrder.estimatedEndDate ? editingOrder.estimatedEndDate.slice(0, 10) : ''}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, estimatedEndDate: e.target.value })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Catatan Staf / Alamat Lokasi</label>
+                <textarea
+                  rows={2}
+                  value={editingOrder.streetAddress || ''}
+                  onChange={(e) => setEditingOrder({ ...editingOrder, streetAddress: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingOrder(null)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-[#7d3feb] hover:bg-[#6f2cdb] text-white font-bold rounded-xl text-xs shadow transition"
+                >
+                  Simpan Perubahan
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Requirement 4: Delete Confirmation Modal */}
+      {deletingOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 p-6 space-y-4">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="w-10 h-10 rounded-2xl bg-rose-50 flex items-center justify-center">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-slate-900">Konfirmasi Hapus Proyek</h3>
+                <p className="text-xs text-slate-500">Tindakan ini tidak dapat dibatalkan.</p>
+              </div>
+            </div>
+
+            <div className="p-4 bg-rose-50/60 rounded-2xl border border-rose-200 text-xs text-rose-950 space-y-1">
+              <div>Apakah Anda yakin ingin menghapus proyek berikut dari database?</div>
+              <div className="font-bold text-slate-900 pt-1">{deletingOrder.companyName}</div>
+              <div className="font-mono text-slate-600">Kode: {deletingOrder.trackingCode}</div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeletingOrder(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeleteProject(deletingOrder)}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs shadow transition"
+              >
+                Ya, Hapus Proyek
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
