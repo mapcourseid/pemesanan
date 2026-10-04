@@ -7,7 +7,8 @@ import { GisInternalDashboard } from './components/GisInternalDashboard';
 import { StaffLoginModal } from './components/StaffLoginModal';
 import type { OrderItem } from './types';
 import { ShieldCheck, Flame, Lock } from 'lucide-react';
-import { initFirebaseService, logoutStaffWithFirebase, onStaffAuthStateChanged } from './services/firebase';
+import { initFirebaseService, logoutStaffWithFirebase, onStaffAuthStateChanged, fetchSingleOrderFromFirebase, syncOrderToFirebase } from './services/firebase';
+import { apiUrl, parseJsonResponse } from './utils/api';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<'order' | 'payment' | 'tracking' | 'internal'>('order');
@@ -22,7 +23,7 @@ export function App() {
   // Firebase Realtime State
   const [isFirebaseActive, setIsFirebaseActive] = useState<boolean>(false);
 
-  // Initialize Firebase & Auth listener
+  // Initialize Firebase & Auth listener + handle post-payment URL params
   useEffect(() => {
     const fbConnected = initFirebaseService();
     setIsFirebaseActive(fbConnected);
@@ -34,10 +35,84 @@ export function App() {
       }
     });
 
+    // Handle post-payment return from Xendit
+    const params = new URLSearchParams(window.location.search);
+    const paymentStatus = params.get('payment');
+    const tab = params.get('tab');
+    const code = params.get('code');
+
+    if (paymentStatus === 'success' && code) {
+      // Mark order as PAID and redirect to payment success/invoice view
+      handlePostPaymentReturn(code);
+    } else if (tab === 'tracking' && code) {
+      setTrackingCodeToView(code);
+      setActiveTab('tracking');
+    } else if (tab === 'payment' && code) {
+      setTrackingCodeToView(code);
+      setActiveTab('payment');
+    }
+
     return () => {
       if (unsubscribeAuth) unsubscribeAuth();
     };
   }, []);
+
+  // Load order and mark as paid after Xendit redirect
+  const handlePostPaymentReturn = async (trackingCode: string) => {
+    // Try to find in localStorage first
+    let order: OrderItem | null = null;
+    try {
+      const stored: OrderItem[] = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
+      order = stored.find((o) => o.trackingCode === trackingCode) || null;
+    } catch { /* ignore */ }
+
+    // Try Firebase if not in localStorage
+    if (!order) {
+      try {
+        order = await fetchSingleOrderFromFirebase(trackingCode);
+      } catch { /* ignore */ }
+    }
+
+    // Try backend API
+    if (!order) {
+      try {
+        const res = await fetch(apiUrl(`/api/orders/${trackingCode}`));
+        const data = await parseJsonResponse<OrderItem>(res, 'order not found');
+        order = data;
+      } catch { /* ignore */ }
+    }
+
+    if (order) {
+      // Mark as paid if not already
+      const paidOrder: OrderItem = {
+        ...order,
+        paymentStatus: 'PAID',
+        status: order.status === 'Menunggu Pembayaran' ? 'Verifikasi Berkas' : order.status,
+        paidAt: order.paidAt || new Date().toISOString(),
+        paymentMethod: order.paymentMethod || 'Xendit Payment Gateway',
+      };
+
+      // Update localStorage
+      try {
+        const stored: OrderItem[] = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
+        const idx = stored.findIndex((o) => o.trackingCode === trackingCode);
+        if (idx !== -1) stored[idx] = paidOrder; else stored.unshift(paidOrder);
+        localStorage.setItem('mapcourse_local_orders', JSON.stringify(stored));
+      } catch { /* ignore */ }
+
+      // Sync to Firebase
+      try { await syncOrderToFirebase(paidOrder); } catch { /* ignore */ }
+
+      setCurrentOrder(paidOrder);
+      setTrackingCodeToView(trackingCode);
+      setActiveTab('payment');
+    }
+
+    // Clean URL params without reload
+    window.history.replaceState({}, '', window.location.pathname);
+  };
+
+
 
   const handleOrderCreated = (order: OrderItem) => {
     setCurrentOrder(order);

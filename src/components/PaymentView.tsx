@@ -1,21 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  CreditCard, 
-  QrCode, 
-  Building, 
-  Wallet, 
-  CheckCircle2, 
-  ArrowRight, 
-  Copy, 
-  Clock, 
-  Sparkles, 
-  Printer, 
-  MessageSquare, 
+import {
+  CreditCard,
+  CheckCircle2,
+  ArrowRight,
+  Clock,
+  Printer,
+  MessageSquare,
   ShieldCheck,
   Tag,
   ExternalLink,
+  FileDown,
   Zap,
-  FileDown
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import html2canvas from 'html2canvas';
@@ -37,10 +32,6 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
   onPaymentSuccess,
   onGoToTracking,
 }) => {
-  const [selectedMethod, setSelectedMethod] = useState<'QRIS' | 'VA' | 'EWALLET'>('QRIS');
-  const [selectedBank, setSelectedBank] = useState<'BCA' | 'MANDIRI' | 'BRI' | 'BNI'>('BCA');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [isCopied, setIsCopied] = useState(false);
   const [showWaModal, setShowWaModal] = useState(false);
   const [isXenditLoading, setIsXenditLoading] = useState(false);
   const [xenditUrl, setXenditUrl] = useState<string | null>(order?.xenditInvoiceUrl || null);
@@ -61,18 +52,17 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
       const data = await parseJsonResponse<{ invoiceUrl?: string }>(res, 'Gagal memanggil gateway Xendit');
       setXenditUrl(data.invoiceUrl || null);
 
-      // Buka halaman pembayaran resmi Xendit di tab/jendela baru
       if (data.invoiceUrl) {
         window.open(data.invoiceUrl, '_blank', 'noopener,noreferrer');
       }
     } catch (err: any) {
-      console.warn('[PaymentView] Xendit auto-trigger notice:', err);
+      console.warn('[PaymentView] Xendit notice:', err);
     } finally {
       setIsXenditLoading(false);
     }
   };
 
-  // Requirement 2: Setelah pengisian formulir, otomatis panggil Xendit
+  // Auto-trigger Xendit when order is UNPAID and no invoice URL yet
   useEffect(() => {
     if (order && order.paymentStatus === 'UNPAID' && !xenditUrl && !isXenditLoading) {
       handlePayWithXendit();
@@ -87,7 +77,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
         </div>
         <h2 className="text-xl font-bold text-slate-800">Belum Ada Tagihan Aktif yang Dipilih</h2>
         <p className="text-sm text-slate-500 max-w-md mx-auto">
-          Silakan lengkapi formulir pemesanan terlebih dahulu, atau gunakan simulasi uji untuk melihat simulasi pembayaran dan faktur resmi.
+          Silakan lengkapi formulir pemesanan terlebih dahulu untuk melanjutkan pembayaran.
         </p>
       </div>
     );
@@ -95,76 +85,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
 
   const isPaid = order.paymentStatus === 'PAID';
 
-  const handleSimulatePayment = async () => {
-    setIsProcessing(true);
-    const paymentMethodName = selectedMethod === 'QRIS' ? 'QRIS Dynamic Instant' : `${selectedBank} Virtual Account`;
-    let updatedOrder: OrderItem = {
-      ...order,
-      paymentStatus: 'PAID',
-      status: 'Verifikasi Berkas',
-      paidAt: new Date().toISOString(),
-      paymentMethod: paymentMethodName,
-    };
-
-    try {
-      const res = await fetch(apiUrl(`/api/orders/${order.trackingCode}/pay`), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          paymentMethod: paymentMethodName,
-        }),
-      });
-
-      const data = await parseJsonResponse<{ order: OrderItem }>(res, 'Gagal memverifikasi pembayaran');
-      if (data.order) {
-        updatedOrder = data.order;
-      }
-    } catch (err: any) {
-      console.warn('[PaymentView] Backend pay endpoint offline. Menyelesaikan pembayaran di Cloud/Lokal:', err);
-    }
-
-    // Simpan status terbaru ke LocalStorage
-    try {
-      const localOrders: OrderItem[] = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
-      const idx = localOrders.findIndex((o) => o.trackingCode === updatedOrder.trackingCode);
-      if (idx !== -1) {
-        localOrders[idx] = updatedOrder;
-      } else {
-        localOrders.unshift(updatedOrder);
-      }
-      localStorage.setItem('mapcourse_local_orders', JSON.stringify(localOrders));
-    } catch (e) {
-      console.warn('LocalStorage error:', e);
-    }
-
-    // Sinkronkan ke Firebase
-    try {
-      await syncOrderToFirebase(updatedOrder);
-    } catch (e) {
-      console.warn('Firebase sync error:', e);
-    }
-
-    confetti({
-      particleCount: 110,
-      spread: 80,
-      origin: { y: 0.6 },
-      colors: ['#7d3feb', '#a773eb', '#decbf7', '#22c55e', '#ffffff'],
-    });
-
-    onPaymentSuccess(updatedOrder);
-    setShowWaModal(true);
-    setIsProcessing(false);
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 2000);
-  };
-
   const waWelcomeMessage = `Terima kasih! Pembayaran Anda telah kami terima.\n\nNomor Antrean Pengerjaan Anda: ${order.queueNumber || '#08'}.\nNomor Invoice: ${order.invoiceNumber || 'INV/20261003/POL-014'}\nTotal Tagihan: ${formatRupiah(order.totalCost)}\n\nPantau progres pengerjaan Polygon & RTB Anda secara langsung di sini: https://tracking.domainanda.com/track/${order.trackingCode}`;
-
-  const vaNumber = `88019${order.contactPhone.slice(-6).padStart(6, '0')}`;
 
   const handlePrintInvoice = () => {
     window.print();
@@ -224,14 +145,14 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold uppercase tracking-wider text-[#7d3feb] bg-[#f6f1fd] px-2.5 py-0.5 rounded-full border border-[#decbf7]">
-              Tahap 2: Pembayaran & Invoice Instant
+              Tahap 2: Pembayaran &amp; Invoice Instant
             </span>
             <span className="text-xs font-mono text-slate-500">
               {order.trackingCode}
             </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">
-            {isPaid ? 'Pembayaran Berhasil & E-Invoice Terbit' : 'Penyelesaian Pembayaran & Gateway'}
+            {isPaid ? 'Pembayaran Berhasil & E-Invoice Terbit' : 'Penyelesaian Pembayaran via Xendit'}
           </h1>
         </div>
 
@@ -239,7 +160,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
           {isPaid ? (
             <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
               <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              LUNAS / DIBAYAR (Auto-Verified)
+              LUNAS / DIBAYAR
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
@@ -253,187 +174,65 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
       {!isPaid ? (
         /* PAYMENT GATEWAY INTERFACE */
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Left Column: Payment Method Selection */}
+          {/* Left Column: Xendit Payment */}
           <div className="md:col-span-2 space-y-6">
             <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-5">
               <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
                 <CreditCard className="w-4 h-4 text-[#7d3feb]" />
-                Pilih Kanal Pembayaran Instant (Midtrans / Xendit Sandbox)
+                Pembayaran via Xendit Payment Gateway
               </h3>
 
-              {/* Tabs */}
-              <div className="grid grid-cols-3 gap-2 p-1.5 bg-slate-100 rounded-2xl">
-                <button
-                  onClick={() => setSelectedMethod('QRIS')}
-                  className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition ${
-                    selectedMethod === 'QRIS'
-                      ? 'bg-white text-[#7d3feb] shadow-md shadow-purple-500/10'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <QrCode className="w-4 h-4 text-[#7d3feb]" />
-                  <span>QRIS Instant</span>
-                </button>
-                <button
-                  onClick={() => setSelectedMethod('VA')}
-                  className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition ${
-                    selectedMethod === 'VA'
-                      ? 'bg-white text-[#7d3feb] shadow-md shadow-purple-500/10'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <Building className="w-4 h-4 text-[#7d3feb]" />
-                  <span>Virtual Account</span>
-                </button>
-                <button
-                  onClick={() => setSelectedMethod('EWALLET')}
-                  className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition ${
-                    selectedMethod === 'EWALLET'
-                      ? 'bg-white text-[#7d3feb] shadow-md shadow-purple-500/10'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <Wallet className="w-4 h-4 text-[#7d3feb]" />
-                  <span>E-Wallet</span>
-                </button>
-              </div>
-
-              {/* Tab Contents */}
-              {selectedMethod === 'QRIS' && (
-                <div className="bg-purple-50/50 rounded-2xl p-6 border border-purple-100 text-center space-y-4">
-                  <div className="inline-block p-4 bg-white rounded-3xl shadow-md border border-purple-200">
-                    <div className="w-48 h-48 bg-white flex flex-col items-center justify-center border-4 border-slate-900 rounded-xl p-2 relative">
-                      <div className="absolute top-1 text-[9px] font-black tracking-widest text-[#7d3feb]">MAP COURSE QRIS</div>
-                      <div className="grid grid-cols-6 gap-1 w-36 h-36">
-                        {Array.from({ length: 36 }).map((_, i) => (
-                          <div
-                            key={i}
-                            className={`rounded-sm ${
-                              (i % 2 === 0 || i % 5 === 0) ? 'bg-[#411a7f]' : 'bg-[#decbf7]'
-                            }`}
-                          />
-                        ))}
-                      </div>
-                      <div className="absolute bottom-1 text-[8px] font-bold text-slate-500">NMID: ID1029384756</div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="text-xs font-bold text-slate-800">
-                      Scan dengan BCA Mobile, Livin Mandiri, BRImo, GoPay, OVO, ShopeePay
-                    </div>
-                    <p className="text-[11px] text-slate-500 mt-1 max-w-sm mx-auto">
-                      Sistem pembayaran terverifikasi otomatis dalam 1 detik tanpa bukti transfer fisik.
-                    </p>
-                  </div>
+              {/* Xendit Info */}
+              <div className="p-5 bg-sky-50 border border-sky-200 rounded-2xl space-y-3">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-sky-600" />
+                  <span className="font-bold text-sky-900 text-sm">Xendit Secure Checkout</span>
                 </div>
-              )}
-
-              {selectedMethod === 'VA' && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-4 gap-2">
-                    {(['BCA', 'MANDIRI', 'BRI', 'BNI'] as const).map((bank) => (
-                      <button
-                        key={bank}
-                        onClick={() => setSelectedBank(bank)}
-                        className={`p-3 rounded-2xl border text-xs font-bold text-center transition ${
-                          selectedBank === bank
-                            ? 'bg-[#f6f1fd] border-[#7d3feb] text-[#7d3feb] shadow-sm'
-                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                        }`}
-                      >
-                        {bank} VA
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
-                    <span className="text-xs text-slate-500 font-medium">Nomor Virtual Account {selectedBank}:</span>
-                    <div className="flex items-center justify-between bg-white px-4 py-3 rounded-xl border border-slate-300">
-                      <span className="font-mono text-base font-bold text-slate-900 tracking-wider">
-                        {vaNumber}
-                      </span>
-                      <button
-                        onClick={() => copyToClipboard(vaNumber)}
-                        className="text-xs text-[#7d3feb] hover:text-[#6f2cdb] font-bold inline-flex items-center gap-1"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                        {isCopied ? 'Tersalin!' : 'Salin'}
-                      </button>
-                    </div>
-                    <p className="text-[11px] text-slate-400">
-                      Atas Nama: <strong>MAP COURSE - {order.companyName}</strong>
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {selectedMethod === 'EWALLET' && (
-                <div className="grid grid-cols-2 gap-3">
-                  {['GoPay', 'OVO', 'ShopeePay', 'DANA'].map((wallet) => (
-                    <div
-                      key={wallet}
-                      className="p-4 rounded-2xl border border-slate-200 bg-slate-50 flex items-center justify-between"
-                    >
-                      <span className="font-bold text-xs text-slate-800">{wallet} Instant</span>
-                      <span className="text-[10px] text-[#7d3feb] font-bold bg-[#f6f1fd] px-2 py-0.5 rounded-full border border-[#decbf7]">
-                        Ready
-                      </span>
-                    </div>
+                <p className="text-xs text-sky-800 leading-relaxed">
+                  Anda akan diarahkan ke halaman pembayaran resmi Xendit yang mendukung berbagai metode pembayaran:
+                  kartu kredit/debit, transfer bank, QRIS, VA, dan dompet digital.
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {['VISA/MC', 'QRIS', 'BCA VA', 'Mandiri VA', 'OVO', 'ShopeePay', 'Dana', 'GoPay'].map((m) => (
+                    <span key={m} className="text-[10px] font-bold px-2 py-0.5 bg-sky-100 text-sky-700 rounded-full border border-sky-200">{m}</span>
                   ))}
                 </div>
-              )}
-
-              {/* Action Button: Xendit Payment Gateway */}
-              <div className="pt-2 space-y-3">
-                <button
-                  onClick={handlePayWithXendit}
-                  disabled={isXenditLoading}
-                  className="w-full py-4 px-4 bg-gradient-to-r from-[#002b49] via-[#005288] to-[#0070ba] hover:opacity-95 active:scale-[0.99] text-white font-extrabold rounded-2xl shadow-xl shadow-blue-900/20 flex items-center justify-center gap-2.5 transition border border-sky-400/30"
-                >
-                  <CreditCard className="w-5 h-5 text-sky-300" />
-                  <span className="text-sm">
-                    {isXenditLoading ? 'Menyiapkan Checkout Xendit...' : 'Bayar via Xendit Payment Gateway ➔'}
-                  </span>
-                </button>
-
-                <div className="flex items-center justify-center gap-2 text-[11px] text-slate-500">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Didukung oleh <strong>Xendit</strong> • QRIS, BCA/Mandiri/BRI VA, OVO, ShopeePay</span>
-                </div>
-
-                {xenditUrl && (
-                  <div className="p-3 bg-sky-50 border border-sky-200 rounded-xl flex items-center justify-between text-xs text-sky-900">
-                    <span className="truncate pr-2">Invoice Xendit Anda telah dibuat</span>
-                    <a
-                      href={xenditUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-bold underline flex items-center gap-1 text-[#005288] flex-shrink-0"
-                    >
-                      Buka Pembayaran <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  </div>
-                )}
-
-                <div className="pt-2 border-t border-slate-100">
-                  <button
-                    onClick={handleSimulatePayment}
-                    disabled={isProcessing}
-                    className="w-full py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                    <span>Mode Tes Cepat: Konfirmasi Otomatis (Simulasi Lunas)</span>
-                  </button>
-                  <p className="text-[10px] text-center text-slate-400 mt-1.5">
-                    * Verifikasi pembayaran akan mengubah status menjadi LUNAS dan menerbitkan E-Invoice resmi.
-                  </p>
-                </div>
               </div>
+
+              {/* Pay Button */}
+              <button
+                onClick={handlePayWithXendit}
+                disabled={isXenditLoading}
+                className="w-full py-4 px-4 bg-gradient-to-r from-[#002b49] via-[#005288] to-[#0070ba] hover:opacity-95 active:scale-[0.99] text-white font-extrabold rounded-2xl shadow-xl shadow-blue-900/20 flex items-center justify-center gap-2.5 transition border border-sky-400/30"
+              >
+                <CreditCard className="w-5 h-5 text-sky-300" />
+                <span className="text-sm">
+                  {isXenditLoading ? 'Menyiapkan Checkout Xendit...' : 'Bayar via Xendit Payment Gateway ➔'}
+                </span>
+              </button>
+
+              <div className="flex items-center justify-center gap-2 text-[11px] text-slate-500">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Transaksi aman diproses oleh <strong>Xendit</strong> • Terenkripsi SSL</span>
+              </div>
+
+              {xenditUrl && (
+                <div className="p-3 bg-sky-50 border border-sky-200 rounded-xl flex items-center justify-between text-xs text-sky-900">
+                  <span className="truncate pr-2">Invoice Xendit Anda telah dibuat</span>
+                  <a
+                    href={xenditUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-bold underline flex items-center gap-1 text-[#005288] flex-shrink-0"
+                  >
+                    Buka Pembayaran <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Right Column: Order Summary with Discounts */}
+          {/* Right Column: Order Summary */}
           <div className="space-y-4">
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
               <h3 className="font-bold text-slate-900 text-sm pb-2 border-b border-slate-100">
@@ -507,7 +306,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
               </div>
               <div>
                 <div className="text-sm font-bold text-slate-900">
-                  Pembayaran Terverifikasi Otomatis (Auto-Verified)
+                  Pembayaran Terverifikasi
                 </div>
                 <div className="text-xs text-purple-700">
                   E-Invoice PDF dan Nomor Antrean telah dikirimkan ke WhatsApp customer ({order.contactPhone}).
@@ -563,7 +362,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
                     MAP COURSE
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Badan Layanan Pemetaan Polygon KKPR & Rencana Tapak Bangunan OSS<br />
+                    Badan Layanan Pemetaan Polygon KKPR &amp; Rencana Tapak Bangunan OSS<br />
                     Standar Kementerian Agraria dan Tata Ruang / BPN RI
                   </p>
                 </div>
@@ -596,12 +395,12 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
 
               <div className="sm:text-right space-y-1">
                 <span className="text-slate-400 font-semibold uppercase tracking-wider block mb-1">
-                  Informasi Antrean & Gateway:
+                  Informasi Antrean &amp; Pembayaran:
                 </span>
                 <div>Kode Tracking: <strong className="font-mono text-slate-900">{order.trackingCode}</strong></div>
                 <div>Nomor Antrean Kerja: <strong className="text-[#7d3feb] text-sm font-bold">{order.queueNumber || '#08'}</strong></div>
-                <div>Metode Bayar: <strong>{order.paymentMethod || 'QRIS Auto-Verified'}</strong></div>
-                <div className="text-emerald-600 font-medium">Status: Terverifikasi Sistem Instant</div>
+                <div>Metode Bayar: <strong>{order.paymentMethod || 'Xendit Payment Gateway'}</strong></div>
+                <div className="text-emerald-600 font-medium">Status: Terverifikasi</div>
               </div>
             </div>
 
@@ -661,7 +460,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
               </table>
             </div>
 
-            {/* Digital Stamp & QR Verification */}
+            {/* Digital Stamp */}
             <div className="pt-6 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-6 text-xs text-slate-500">
               <div className="flex items-center gap-3">
                 <div className="w-16 h-16 border-2 border-[#7d3feb] rounded-xl flex items-center justify-center p-1 bg-purple-50 text-center font-mono text-[9px] text-[#7d3feb] font-bold leading-tight">
