@@ -1,22 +1,51 @@
 /**
- * API base URL — otomatis menyesuaikan antara development dan production.
- * - Development: menggunakan Vite proxy (string kosong) ke http://localhost:3001
- * - Production: menggunakan VITE_API_URL dari environment variable (misal https://xxx.up.railway.app)
+ * API utility — mendukung dua mode:
+ * 1. Firebase Cloud Functions (production) — VITE_FUNCTIONS_URL diset ke Functions base URL
+ * 2. Railway Express (fallback) — VITE_API_URL diset ke Railway URL
+ * 3. Development lokal — localhost:3001
+ *
+ * Firebase Cloud Functions URL format:
+ *   https://asia-southeast1-pemesanan-688f7.cloudfunctions.net
  */
+
+// Firebase Functions base URL (diisi di .env.production)
+export const FUNCTIONS_BASE_URL = (import.meta.env.VITE_FUNCTIONS_URL || '').trim().replace(/\/+$/, '');
+
+// Railway fallback
 export const RAW_API_BASE_URL = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
-// Jika user mengisi VITE_API_URL dengan '/api' di ujungnya (misal https://app.up.railway.app/api), hapus '/api' agar tidak menjadi /api/api
 export const API_BASE_URL = RAW_API_BASE_URL.endsWith('/api')
   ? RAW_API_BASE_URL.slice(0, -4)
   : RAW_API_BASE_URL;
 
 /**
- * Buat URL API lengkap.
- * @param path - path endpoint, misal '/api/orders'
+ * Buat URL Cloud Function.
+ * Jika VITE_FUNCTIONS_URL tersedia, gunakan itu.
+ * Mapping endpoint Railway → Firebase Functions:
+ *   /api/payment/xendit/invoice → /createXenditInvoiceFn
+ *   /api/payment/xendit/webhook → /xenditWebhook
+ *   /api/upload                 → /uploadFile
+ *   Endpoint lain (CRUD orders) → tidak relevan (langsung ke Firebase RTDB)
  */
 export function apiUrl(path: string): string {
   if (!path) return '';
   if (path.startsWith('http://') || path.startsWith('https://')) return path;
+
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
+
+  // Jika Firebase Functions URL tersedia, map endpoint Xendit & Upload
+  if (FUNCTIONS_BASE_URL) {
+    if (cleanPath === '/api/payment/xendit/invoice') {
+      return `${FUNCTIONS_BASE_URL}/createXenditInvoiceFn`;
+    }
+    if (cleanPath === '/api/payment/xendit/webhook') {
+      return `${FUNCTIONS_BASE_URL}/xenditWebhook`;
+    }
+    if (cleanPath === '/api/upload') {
+      return `${FUNCTIONS_BASE_URL}/uploadFile`;
+    }
+  }
+
+  // Fallback ke Railway / localhost
   return `${API_BASE_URL}${cleanPath}`;
 }
 
@@ -25,7 +54,12 @@ export function apiUrl(path: string): string {
  */
 export function fileUrl(path?: string): string {
   if (!path) return '';
-  if (path.startsWith('data:') || path.startsWith('blob:') || path.startsWith('http://') || path.startsWith('https://')) {
+  if (
+    path.startsWith('data:') ||
+    path.startsWith('blob:') ||
+    path.startsWith('http://') ||
+    path.startsWith('https://')
+  ) {
     return path;
   }
   return apiUrl(path);
@@ -49,8 +83,6 @@ export async function apiFetch(
 
 /**
  * Parse respons JSON secara aman.
- * Jika server mengembalikan HTML (misal 404 dari Netlify/Vercel karena VITE_API_URL belum diset),
- * fungsi ini memberikan pesan kesalahan yang jelas dan mudah dipahami.
  */
 export async function parseJsonResponse<T = any>(
   res: Response,
@@ -61,16 +93,16 @@ export async function parseJsonResponse<T = any>(
   if (!contentType.includes('application/json')) {
     if (res.status === 404) {
       throw new Error(
-        `Backend server mengembalikan status 404 (Not Found) untuk URL: ${res.url}. Pastikan backend Railway aktif, domain publik sudah di-generate di Railway (Settings > Networking > Generate Domain), dan variabel VITE_API_URL di Netlify/Vercel sudah diset dengan benar.`
+        `Endpoint tidak ditemukan (404): ${res.url}. Pastikan Firebase Functions sudah di-deploy dan VITE_FUNCTIONS_URL sudah diset dengan benar.`
       );
     }
     if (!res.ok) {
       throw new Error(
-        `Backend server mengembalikan status ${res.status} (${res.statusText || 'Error'}). Pastikan backend Railway aktif.`
+        `Server mengembalikan status ${res.status} (${res.statusText || 'Error'}).`
       );
     }
     throw new Error(
-      'Server mengembalikan halaman HTML alih-alih data JSON. Pastikan server backend Railway aktif dan variabel VITE_API_URL sudah disetting di dashboard hosting Anda (Netlify/Vercel).'
+      'Server mengembalikan halaman HTML alih-alih data JSON. Pastikan VITE_FUNCTIONS_URL sudah diset dengan benar.'
     );
   }
 

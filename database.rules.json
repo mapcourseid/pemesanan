@@ -1,0 +1,10 @@
+{
+  "rules": {
+    "mapcourse": {
+      "orders": {
+        ".read": true,
+        ".write": true
+      }
+    }
+  }
+}
