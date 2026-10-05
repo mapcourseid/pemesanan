@@ -1,0 +1,8 @@
+{
+  "name": "pemesanan",
+  "description": "Layanan Pemesanan & Tracking Jasa Pemetaan GIS dan Rencana Tapak Bangunan (RTB) MAP COURSE",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

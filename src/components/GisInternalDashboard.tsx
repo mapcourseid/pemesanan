@@ -84,6 +84,16 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
   const [manualDiscountAmount, setManualDiscountAmount] = useState<number>(0);
   const [applyingDiscount, setApplyingDiscount] = useState(false);
 
+  // Toast Notification State (replaces window.alert for iframe compatibility)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast((curr) => (curr?.message === message ? null : curr));
+    }, 4000);
+  };
+
   const mergeOrders = (incoming: OrderItem[]) => {
     if (!Array.isArray(incoming) || incoming.length === 0) return;
     setOrders((prev) => {
@@ -274,10 +284,10 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
       if (data.order) {
         persistOrderLocallyAndCloud(data.order);
       }
-      alert('Berkas hasil pengerjaan GIS & RTB berhasil diperbarui dan disinkronkan!');
+      showToast('Berkas hasil pengerjaan GIS & RTB berhasil diperbarui dan disinkronkan!', 'success');
     } catch (err: any) {
       console.warn('Backend upload deliverables notice (persisted via Cloud & Local):', err);
-      alert('Berkas hasil pengerjaan GIS & RTB berhasil disimpan dan disinkronkan ke Cloud Firebase!');
+      showToast('Berkas hasil pengerjaan GIS & RTB berhasil disimpan dan disinkronkan ke Cloud Firebase!', 'success');
     } finally {
       setUploadingGis(false);
     }
@@ -307,10 +317,10 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
       if (data.order) {
         persistOrderLocallyAndCloud(data.order);
       }
-      alert(`Diskon sebesar ${formatRupiah(manualDiscountAmount)} berhasil diterapkan!`);
+      showToast(`Diskon sebesar ${formatRupiah(manualDiscountAmount)} berhasil diterapkan!`, 'success');
     } catch (err: any) {
       console.warn('Backend discount returned notice (applied via Cloud & Local):', err);
-      alert(`Diskon sebesar ${formatRupiah(manualDiscountAmount)} berhasil diterapkan (tersinkron ke Cloud & Lokal)!`);
+      showToast(`Diskon sebesar ${formatRupiah(manualDiscountAmount)} berhasil diterapkan!`, 'success');
     } finally {
       setApplyingDiscount(false);
     }
@@ -349,7 +359,7 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
   const handleDownloadCustomerPolygon = (geoJsonData: any, trackingCode: string) => {
     try {
       if (!geoJsonData) {
-        alert('Data geometri polygon tidak ditemukan.');
+        showToast('Data geometri polygon tidak ditemukan.', 'error');
         return;
       }
       const jsonStr = typeof geoJsonData === 'string' ? geoJsonData : JSON.stringify(geoJsonData, null, 2);
@@ -363,7 +373,7 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 500);
     } catch (e: any) {
-      alert(`Gagal mengunduh file polygon: ${e.message}`);
+      showToast(`Gagal mengunduh file polygon: ${e.message}`, 'error');
     }
   };
 
@@ -382,10 +392,10 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated),
       });
-      alert(`Data proyek ${updated.companyName} (${updated.trackingCode}) berhasil diperbarui!`);
+      showToast(`Data proyek ${updated.companyName} (${updated.trackingCode}) berhasil diperbarui!`, 'success');
     } catch (err: any) {
       console.warn('Backend edit project notice:', err);
-      alert(`Data proyek ${updated.companyName} berhasil diperbarui (tersinkron ke Cloud & Lokal)!`);
+      showToast(`Data proyek ${updated.companyName} berhasil diperbarui!`, 'success');
     }
   };
 
@@ -413,7 +423,7 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
       await fetch(apiUrl(`/api/orders/${code}`), { method: 'DELETE' });
     } catch (e) {}
 
-    alert(`Proyek ${orderToDelete.companyName} (${code}) berhasil dihapus.`);
+    showToast(`Proyek ${orderToDelete.companyName} (${code}) berhasil dihapus.`, 'info');
   };
 
   // Requirement 6: Timeline dates updater
@@ -1303,6 +1313,24 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
               </button>
             </div>
           </div>
+        </div>
+      )}
+      {/* Toast Notification Container */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-md bg-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-2xl flex items-center justify-between gap-4 border border-slate-700 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className="flex items-center gap-3">
+            {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />}
+            {toast.type === 'error' && <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />}
+            {toast.type === 'info' && <Layers className="w-5 h-5 text-purple-400 shrink-0" />}
+            <p className="text-sm font-medium">{toast.message}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setToast(null)}
+            className="text-slate-400 hover:text-white font-bold text-lg px-1 ml-2"
+          >
+            &times;
+          </button>
         </div>
       )}
     </div>

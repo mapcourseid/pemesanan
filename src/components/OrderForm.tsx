@@ -11,7 +11,7 @@ import {
   CheckCircle2,
   Tag,
   Check,
-  Flame
+  AlertTriangle
 } from 'lucide-react';
 import { LeafletMapPreview } from './LeafletMapPreview';
 import { 
@@ -88,6 +88,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
   const [couponInput, setCouponInput] = useState<string>('');
   const [appliedCouponCode, setAppliedCouponCode] = useState<string>('');
   const [couponError, setCouponError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -148,9 +149,10 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
     if (!file) return;
 
     if (file.size > 5 * 1024 * 1024) {
-      alert('Ukuran file melebihi 5MB! Silakan pilih file dokumen lain.');
+      setFormError('Ukuran file melebihi 5MB! Silakan pilih file dokumen lain.');
       return;
     }
+    setFormError(null);
 
     setLandDocumentFile(file);
     setIsUploadingDoc(true);
@@ -380,7 +382,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
 
       onOrderCreated(createdOrder);
     } else {
-      alert('Terjadi kesalahan saat memproses data pesanan. Silakan periksa kelengkapan form.');
+      setFormError('Terjadi kesalahan saat memproses data pesanan. Silakan periksa kelengkapan form.');
     }
 
     setIsSubmitting(false);
@@ -404,6 +406,22 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
           </p>
         </div>
       </div>
+
+      {formError && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-2xl flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0" />
+            <p className="text-sm font-medium">{formError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFormError(null)}
+            className="text-rose-400 hover:text-rose-700 font-bold text-lg px-2"
+          >
+            &times;
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column: Form Fields */}
