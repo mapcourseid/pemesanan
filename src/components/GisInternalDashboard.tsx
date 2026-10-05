@@ -23,13 +23,41 @@ import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
-  CheckCircle2
+  CheckCircle2,
+  CreditCard
 } from 'lucide-react';
 import type { OrderItem, OrderStatus } from '../types';
 import { formatRupiah, AVAILABLE_COUPONS } from '../utils/pricing';
 import { WhatsAppPreviewModal } from './WhatsAppPreviewModal';
 import { syncOrderToFirebase, subscribeToFirebaseOrders, deleteOrderFromFirebase } from '../services/firebase';
 import { apiUrl, fileUrl, parseJsonResponse } from '../utils/api';
+
+const formatProjectDate = (isoString?: string) => {
+  if (!isoString) return '-';
+  try {
+    return new Date(isoString).toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+  } catch {
+    return isoString;
+  }
+};
+
+const formatPaymentDate = (isoString?: string) => {
+  if (!isoString) return null;
+  try {
+    const d = new Date(isoString);
+    return `${d.toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    })} • ${d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB`;
+  } catch {
+    return isoString;
+  }
+};
 
 const STATUS_OPTIONS: OrderStatus[] = [
   'Menunggu Pembayaran',
@@ -770,6 +798,24 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
                         <div className="text-[11px] text-slate-500">
                           {ord.areaSizeM2.toLocaleString('id-ID')} m² • {ord.city}
                         </div>
+                        {/* Informasi Tanggal Proyek (Seragam) & Tanggal Pembayaran */}
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-slate-500 mt-1 pt-1 border-t border-slate-100/70">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-purple-600" />
+                            <span>Tgl Proyek: <strong className="text-slate-800">{formatProjectDate(ord.createdAt)}</strong></span>
+                          </span>
+                          <span>•</span>
+                          <span className="flex items-center gap-1">
+                            <CreditCard className="w-3 h-3 text-emerald-600" />
+                            {ord.paidAt ? (
+                              <span className="text-emerald-700 font-bold">Bayar: {formatPaymentDate(ord.paidAt)}</span>
+                            ) : ord.paymentStatus === 'PAID' ? (
+                              <span className="text-emerald-700 font-bold">LUNAS</span>
+                            ) : (
+                              <span className="text-amber-700 font-bold">Belum Bayar</span>
+                            )}
+                          </span>
+                        </div>
                       </div>
 
                       <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-[11px]">
@@ -841,6 +887,99 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
                     <span>Live Tracking</span>
                     <ExternalLink className="w-3.5 h-3.5" />
                   </button>
+                </div>
+              </div>
+
+              {/* Informasi Pembayaran Proyek & Tanggal Proyek Resmi (Seragam Semua Tahap) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* 1. Informasi Pembayaran */}
+                <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <CreditCard className="w-4 h-4 text-[#7d3feb]" />
+                      Status &amp; Tanggal Pembayaran:
+                    </span>
+                    {selectedOrder.paymentStatus === 'PAID' ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        LUNAS
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-amber-600" />
+                        MENUNGGU PEMBAYARAN
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="text-xs space-y-1.5 pt-1 border-t border-slate-100">
+                    <div className="flex justify-between items-center text-slate-600">
+                      <span>Tanggal Pembayaran:</span>
+                      <span className={`font-bold ${selectedOrder.paidAt ? 'text-emerald-700' : 'text-amber-700'}`}>
+                        {selectedOrder.paidAt ? formatPaymentDate(selectedOrder.paidAt) : 'Belum Dibayar'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-600">
+                      <span>Metode Pembayaran:</span>
+                      <span className="font-semibold text-slate-900">
+                        {selectedOrder.paymentMethod || (selectedOrder.paymentStatus === 'PAID' ? 'Xendit Gateway' : '-')}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-600">
+                      <span>Total Biaya Proyek:</span>
+                      <span className="font-black text-[#7d3feb] font-mono text-sm">
+                        {formatRupiah(selectedOrder.totalCost)}
+                      </span>
+                    </div>
+                    {selectedOrder.invoiceNumber && (
+                      <div className="flex justify-between items-center text-slate-600">
+                        <span>Nomor Invoice:</span>
+                        <span className="font-mono font-semibold text-slate-700 text-[11px]">
+                          {selectedOrder.invoiceNumber}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 2. Informasi Tanggal Proyek (Seragam Semua Tahapan) */}
+                <div className="p-4 bg-purple-50/60 rounded-2xl border border-purple-200 shadow-sm space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
+                      <Calendar className="w-4 h-4 text-[#7d3feb]" />
+                      Tanggal Proyek (Seragam):
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-200 text-purple-900">
+                      Satu Tanggal Resmi
+                    </span>
+                  </div>
+
+                  <div className="text-xs space-y-1.5 pt-1 border-t border-purple-200/60">
+                    <div className="flex justify-between items-center text-slate-600">
+                      <span>Tanggal Masuk Proyek:</span>
+                      <span className="font-black text-slate-900">
+                        {formatProjectDate(selectedOrder.createdAt)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-600">
+                      <span>Ketentuan Tanggal:</span>
+                      <span className="text-purple-900 font-semibold text-[11px]">
+                        Berlaku sama di seluruh tahapan (Step 1 - 5)
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-600">
+                      <span>Tahap Berjalan Saat Ini:</span>
+                      <span className="font-bold text-[#7d3feb]">
+                        {selectedOrder.status}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-600">
+                      <span>Estimasi Selesai (Target):</span>
+                      <span className="font-bold text-slate-800">
+                        {selectedOrder.estimatedEndDate ? formatProjectDate(selectedOrder.estimatedEndDate) : 'Standar 2-3 Hari Kerja'}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1205,12 +1344,36 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
                   <label className="block font-bold text-slate-700 mb-1">Status Pembayaran</label>
                   <select
                     value={editingOrder.paymentStatus}
-                    onChange={(e) => setEditingOrder({ ...editingOrder, paymentStatus: e.target.value as any })}
+                    onChange={(e) => setEditingOrder({ 
+                      ...editingOrder, 
+                      paymentStatus: e.target.value as any,
+                      paidAt: e.target.value === 'PAID' && !editingOrder.paidAt ? new Date().toISOString() : editingOrder.paidAt
+                    })}
                     className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold"
                   >
                     <option value="UNPAID">Belum Dibayar (UNPAID)</option>
                     <option value="PAID">Lunas (PAID)</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Tanggal Pembayaran Proyek</label>
+                  <input
+                    type="datetime-local"
+                    value={editingOrder.paidAt ? new Date(editingOrder.paidAt).toISOString().slice(0, 16) : ''}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, paidAt: e.target.value ? new Date(e.target.value).toISOString() : undefined })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Tanggal Proyek (Seragam Semua Tahap)</label>
+                  <input
+                    type="date"
+                    value={editingOrder.createdAt ? editingOrder.createdAt.slice(0, 10) : ''}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, createdAt: e.target.value ? new Date(e.target.value).toISOString() : editingOrder.createdAt })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono"
+                  />
                 </div>
 
                 <div>
