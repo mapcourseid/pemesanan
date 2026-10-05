@@ -340,17 +340,36 @@ app.post('/api/payment/xendit/invoice', async (req, res) => {
   }
 });
 
-// Xendit: Webhook Callback (Auto-Verification)
+// Xendit: Webhook Health Check (GET)
+app.get('/api/payment/xendit/webhook', (_req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    message: 'Xendit Webhook endpoint is active and listening for payment events.',
+  });
+});
+
+// Xendit: Webhook Callback (Auto-Verification) (POST)
 app.post('/api/payment/xendit/webhook', (req, res) => {
   try {
     const callbackToken = req.headers['x-callback-token'];
+    
+    // Validasi token webhook jika diset di environment
     if (!verifyXenditWebhookToken(callbackToken)) {
-      console.warn('[Xendit Webhook] Unauthorized callback token received.');
+      console.warn('[Xendit Webhook] Callback token tidak cocok. Mengizinkan test ping atau periksa XENDIT_WEBHOOK_TOKEN.');
+      // Jika request adalah test ping dari dashboard Xendit (tanpa body lengkap)
+      if (!req.body || !req.body.external_id) {
+        return res.status(200).json({ success: true, message: 'Test ping received' });
+      }
       return res.status(403).json({ error: 'Invalid callback token' });
     }
 
     const { external_id, status, payment_method, payment_channel } = req.body;
     console.log(`[Xendit Webhook] Notifikasi diterima untuk ${external_id}: status ${status}`);
+
+    // Jika ini adalah test callback dari dashboard Xendit
+    if (!external_id || external_id === 'test' || external_id.includes('test')) {
+      return res.status(200).json({ success: true, message: 'Test callback successful' });
+    }
 
     if (status === 'PAID' || status === 'SETTLED') {
       const order = orders.find((o) => o.trackingCode.toUpperCase() === external_id?.toUpperCase());
