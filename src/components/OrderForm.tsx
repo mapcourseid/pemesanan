@@ -143,6 +143,34 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
     }
   };
 
+  const handleFillDemoData = () => {
+    setCompanyName('PT Maju Peta Nusantara');
+    setContactName('Budi Santoso, S.T.');
+    setContactPhone('081234567890');
+    setContactEmail('budi.santoso@majupeta.co.id');
+    setKbliCode('68111');
+    setKbliName('Real Estat yang Dimiliki Sendiri atau Disewa');
+    setAreaInput(5000);
+    setAreaUnit('m2');
+    setLandOwnershipStatus('Sudah Menguasai');
+    setLandOwnershipType('SHGB');
+    setStreetAddress('Jl. Raya Soekarno Hatta No. 450');
+    setProvince('Jawa Barat');
+    setCity('Kota Bandung');
+    setDistrict('Batununggal');
+    setVillage('Kujangsari');
+    setPostalCode('40287');
+    setBuildingCount(4);
+    setBuildingFloors(2);
+    setBuildingHeightMeters(8);
+    setImbStatus('Dalam Proses');
+    setCoordinates({ lat: -6.9389, lng: 107.6364 });
+    setHasPolygon(true);
+    setCouponInput('MAPPROMO50');
+    setAppliedCouponCode('MAPPROMO50');
+    setFormError(null);
+  };
+
   // File upload for Land Ownership Document
   const handleLandDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

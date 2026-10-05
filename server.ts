@@ -1,6 +1,32 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+
+// Muat .env jika ada file .env lokal dan gantikan placeholder jika ada
+if (fs.existsSync('.env')) {
+  try {
+    const envContent = fs.readFileSync('.env', 'utf-8');
+    for (const line of envContent.split('\n')) {
+      const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+      if (match) {
+        const key = match[1];
+        let val = (match[2] || '').trim().replace(/^['"](.*)['"]$/, '$1');
+        if (
+          !process.env[key] ||
+          process.env[key]?.includes('your_') ||
+          process.env[key]?.includes('change_me') ||
+          process.env[key]?.includes('dummy') ||
+          process.env[key]?.trim() === ''
+        ) {
+          process.env[key] = val;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Gagal memuat .env lokal:', e);
+  }
+}
+
 import { app } from './server/app';
 
 const args = process.argv.slice(2);
