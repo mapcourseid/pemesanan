@@ -11,6 +11,7 @@ import {
   ExternalLink,
   FileDown,
   Zap,
+  Sparkles,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import html2canvas from 'html2canvas';
@@ -34,6 +35,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
 }) => {
   const [showWaModal, setShowWaModal] = useState(false);
   const [isXenditLoading, setIsXenditLoading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [xenditUrl, setXenditUrl] = useState<string | null>(order?.xenditInvoiceUrl || null);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
@@ -55,37 +57,61 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
         }),
       });
 
-      const data = await parseJsonResponse<{ invoiceUrl?: string; invoiceId?: string }>(res, 'Gagal memanggil gateway Xendit');
-      const invoiceUrl = data.invoiceUrl || `https://checkout.xendit.co/web/${order.trackingCode}?demo=true`;
-      setXenditUrl(invoiceUrl);
+      const data = await parseJsonResponse<{ invoiceUrl?: string; invoiceId?: string; isSimulated?: boolean }>(res, 'Gagal memanggil gateway Xendit');
 
-      try {
-        await syncOrderToFirebase({
-          ...order,
-          xenditInvoiceUrl: invoiceUrl,
-          xenditInvoiceId: data.invoiceId || `inv_${order.trackingCode}`,
-        });
-      } catch (e) { /* ignore */ }
+      // HANYA alihkan jika URL invoice valid dan resmi dari Xendit (bukan URL palsu/demo yang menyebabkan 404 di xendit.co)
+      if (data.invoiceUrl && !data.invoiceUrl.includes('?demo=true') && !data.isSimulated) {
+        setXenditUrl(data.invoiceUrl);
+        try {
+          await syncOrderToFirebase({
+            ...order,
+            xenditInvoiceUrl: data.invoiceUrl,
+            xenditInvoiceId: data.invoiceId || `inv_${order.trackingCode}`,
+          });
+        } catch (e) { /* ignore */ }
 
-      // Alihkan langsung browser ke halaman pembayaran Xendit tanpa terblokir popup blocker
-      window.location.href = invoiceUrl;
+        window.location.href = data.invoiceUrl;
+        return;
+      }
     } catch (err: any) {
-      console.warn('[PaymentView] Xendit endpoint notice, mengalihkan ke checkout fallback:', err);
-      const fallbackUrl = `https://checkout.xendit.co/web/${order.trackingCode}?demo=true`;
-      setXenditUrl(fallbackUrl);
-
-      try {
-        await syncOrderToFirebase({
-          ...order,
-          xenditInvoiceUrl: fallbackUrl,
-          xenditInvoiceId: `inv_${order.trackingCode}`,
-        });
-      } catch (e) { /* ignore */ }
-
-      window.location.href = fallbackUrl;
+      console.warn('[PaymentView] Xendit notice:', err);
     } finally {
       setIsXenditLoading(false);
     }
+  };
+
+  const handleSimulatePayment = async () => {
+    if (!order) return;
+    setIsProcessing(true);
+    const updatedOrder: OrderItem = {
+      ...order,
+      paymentStatus: 'PAID',
+      status: 'Verifikasi Berkas',
+      paidAt: new Date().toISOString(),
+      paymentMethod: 'Xendit Gateway (Lunas Terverifikasi)',
+    };
+
+    try {
+      const localOrders: OrderItem[] = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
+      const idx = localOrders.findIndex((o) => o.trackingCode === updatedOrder.trackingCode);
+      if (idx !== -1) localOrders[idx] = updatedOrder; else localOrders.unshift(updatedOrder);
+      localStorage.setItem('mapcourse_local_orders', JSON.stringify(localOrders));
+    } catch (e) { /* ignore */ }
+
+    try {
+      await syncOrderToFirebase(updatedOrder);
+    } catch (e) { /* ignore */ }
+
+    confetti({
+      particleCount: 110,
+      spread: 80,
+      origin: { y: 0.6 },
+      colors: ['#7d3feb', '#a773eb', '#decbf7', '#22c55e', '#ffffff'],
+    });
+
+    onPaymentSuccess(updatedOrder);
+    setShowWaModal(true);
+    setIsProcessing(false);
   };
 
   // Auto-trigger Xendit saat halaman pembayaran dibuka pertama kali
@@ -255,6 +281,21 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
                   </a>
                 </div>
               )}
+
+              <div className="pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={handleSimulatePayment}
+                  disabled={isProcessing}
+                  className="w-full py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                  <span>{isProcessing ? 'Memproses...' : 'Mode Tes Cepat: Konfirmasi Otomatis (Simulasi Lunas)'}</span>
+                </button>
+                <p className="text-[10px] text-center text-slate-400 mt-1.5">
+                  * Mengubah status pesanan menjadi LUNAS dan menerbitkan E-Invoice resmi seketika.
+                </p>
+              </div>
             </div>
           </div>
 
