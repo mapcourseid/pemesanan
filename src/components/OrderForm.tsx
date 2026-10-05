@@ -345,9 +345,9 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
 
     let createdOrder: OrderItem = newOrderData;
 
-    // Coba kirim juga ke backend jika backend aktif (opsional)
+    // Kirim pesanan ke backend API
     const backendUrl = apiUrl('/api/orders');
-    if (backendUrl && !backendUrl.startsWith('/api')) {
+    if (backendUrl) {
       try {
         const res = await fetch(backendUrl, {
           method: 'POST',
@@ -359,7 +359,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
           createdOrder = data;
         }
       } catch (err) {
-        console.info('[OrderForm] Berjalan dalam mode Firebase Standalone.');
+        console.info('[OrderForm] Backend offline atau menggunakan fallback client.');
       }
     }
 

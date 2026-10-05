@@ -127,10 +127,10 @@ export async function createXenditInvoice(params: CreateInvoiceParams): Promise<
         errorMsg.toLowerCase().includes('api key') ||
         errorMsg.toLowerCase().includes('invalid')
       ) {
-        console.warn('[Xendit API] XENDIT_SECRET_KEY di Railway ditolak oleh Xendit (Invalid API Key). Mengalihkan ke mode simulasi aman:', errorMsg);
+        console.warn('[Xendit API] XENDIT_SECRET_KEY ditolak oleh server Xendit (Invalid API Key):', errorMsg);
         return getSimulatedInvoice(
           params,
-          'XENDIT_SECRET_KEY di Railway tidak valid. Silakan perbarui API Key Secret di Railway Dashboard -> Environment Variables. Pembayaran dialihkan ke mode simulasi.'
+          'XENDIT_SECRET_KEY ditolak oleh server Xendit (401 INVALID_API_KEY). Pastikan Secret Key disalin lengkap dari Dashboard Xendit (Pengaturan > API Keys) dengan izin Money-in (WRITE).'
         );
       }
 

@@ -38,6 +38,8 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [xenditUrl, setXenditUrl] = useState<string | null>(order?.xenditInvoiceUrl || null);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [isSimulatedInvoice, setIsSimulatedInvoice] = useState(false);
+  const [xenditWarningMessage, setXenditWarningMessage] = useState<string | null>(null);
 
   const handlePayWithXendit = async () => {
     if (!order) return;
@@ -57,7 +59,14 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
         }),
       });
 
-      const data = await parseJsonResponse<{ invoiceUrl?: string; invoiceId?: string; isSimulated?: boolean }>(res, 'Gagal memanggil gateway Xendit');
+      const data = await parseJsonResponse<{ invoiceUrl?: string; invoiceId?: string; isSimulated?: boolean; warningMessage?: string }>(res, 'Gagal memanggil gateway Xendit');
+
+      if (data.isSimulated) {
+        setIsSimulatedInvoice(true);
+        if (data.warningMessage) {
+          setXenditWarningMessage(data.warningMessage);
+        }
+      }
 
       // HANYA alihkan jika URL invoice valid dan resmi dari Xendit (bukan URL palsu/demo yang menyebabkan 404 di xendit.co)
       if (data.invoiceUrl && !data.invoiceUrl.includes('?demo=true') && !data.isSimulated) {
@@ -267,6 +276,22 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
                 <span>Transaksi aman diproses oleh <strong>Xendit</strong> • Terenkripsi SSL</span>
               </div>
+
+              {isSimulatedInvoice && (
+                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-950">
+                    <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Mode Simulasi Xendit Aktif</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    {xenditWarningMessage || (
+                      <>
+                        Kunci <code>XENDIT_SECRET_KEY</code> belum diisi di environment server. Untuk uji coba alur pemesanan secara langsung, klik tombol <strong>Mode Tes Cepat: Konfirmasi Otomatis</strong> di bawah. Untuk menghubungkan ke pembayaran Xendit asli, masukkan API Key Xendit Anda ke file environment server.
+                      </>
+                    )}
+                  </p>
+                </div>
+              )}
 
               {xenditUrl && (
                 <div className="p-3 bg-sky-50 border border-sky-200 rounded-xl flex items-center justify-between text-xs text-sky-900">

@@ -317,6 +317,7 @@ app.post('/api/payment/xendit/invoice', async (req, res) => {
     const companyName = String(order?.companyName || reqCompanyName || 'Pelanggan MAP COURSE');
     const contactName = String(order?.contactName || reqContactName || companyName);
     const contactPhone = String(order?.contactPhone || reqContactPhone || '');
+    const contactEmail = String(order?.contactEmail || reqContactEmail || '');
     const rawFrontendUrl = reqFrontendUrl || process.env.FRONTEND_URL || '';
     const frontendUrl = rawFrontendUrl.trim().replace(/\/+$/, '');
 
@@ -326,7 +327,7 @@ app.post('/api/payment/xendit/invoice', async (req, res) => {
       description: `Pemetaan KKPR & Dokumen RTB - ${companyName} (${trackingCode})`,
       customerName: contactName,
       customerPhone: contactPhone,
-      payerEmail: contactEmail || reqContactEmail,
+      payerEmail: contactEmail || undefined,
       successRedirectUrl: frontendUrl ? `${frontendUrl}/?tab=tracking&code=${trackingCode}&payment=success` : undefined,
       failureRedirectUrl: frontendUrl ? `${frontendUrl}/?tab=payment&code=${trackingCode}&payment=failed` : undefined,
     });
@@ -342,6 +343,7 @@ app.post('/api/payment/xendit/invoice', async (req, res) => {
       invoiceUrl: invoice.invoice_url,
       invoiceId: invoice.id,
       isSimulated: invoice.isSimulated,
+      warningMessage: invoice.warningMessage,
     });
   } catch (err: any) {
     console.error('Error creating Xendit invoice:', err);
