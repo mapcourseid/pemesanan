@@ -54,9 +54,17 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
         }),
       });
 
-      const data = await parseJsonResponse<{ invoiceUrl?: string }>(res, 'Gagal memanggil gateway Xendit');
+      const data = await parseJsonResponse<{ invoiceUrl?: string; invoiceId?: string }>(res, 'Gagal memanggil gateway Xendit');
       const invoiceUrl = data.invoiceUrl || `https://checkout.xendit.co/web/${order.trackingCode}?demo=true`;
       setXenditUrl(invoiceUrl);
+
+      try {
+        await syncOrderToFirebase({
+          ...order,
+          xenditInvoiceUrl: invoiceUrl,
+          xenditInvoiceId: data.invoiceId || `inv_${order.trackingCode}`,
+        });
+      } catch (e) { /* ignore */ }
 
       // Alihkan langsung browser ke halaman pembayaran Xendit tanpa terblokir popup blocker
       window.location.href = invoiceUrl;
@@ -64,6 +72,15 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
       console.warn('[PaymentView] Xendit endpoint notice, mengalihkan ke checkout fallback:', err);
       const fallbackUrl = `https://checkout.xendit.co/web/${order.trackingCode}?demo=true`;
       setXenditUrl(fallbackUrl);
+
+      try {
+        await syncOrderToFirebase({
+          ...order,
+          xenditInvoiceUrl: fallbackUrl,
+          xenditInvoiceId: `inv_${order.trackingCode}`,
+        });
+      } catch (e) { /* ignore */ }
+
       window.location.href = fallbackUrl;
     } finally {
       setIsXenditLoading(false);

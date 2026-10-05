@@ -290,69 +290,75 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
       discountAmount: pricingResult.discountAmount,
     };
 
-    let createdOrder: OrderItem | null = null;
+    // Mode Firebase Full Stack: Bentuk pesanan resmi langsung dan simpan ke Firebase Realtime Database
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const dateCode = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+    const randomSuffix = Math.floor(100 + Math.random() * 900);
+    const trackingCode = `POL-${now.getFullYear()}-${dateCode.slice(4)}-${randomSuffix}`;
+    const uniqueId = `order_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-    try {
-      const res = await fetch(apiUrl('/api/orders'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+    const newOrderData: OrderItem = {
+      id: uniqueId,
+      trackingCode,
+      queueNumber: `#${String(randomSuffix).slice(-2)}`,
+      createdAt: now.toISOString(),
+      status: 'Menunggu Pembayaran',
+      companyName,
+      contactName: contactName || companyName,
+      contactPhone,
+      contactEmail: contactEmail || '',
+      kbliCode: kbliCode || '68111',
+      kbliName: kbliName || 'Real Estat',
+      areaSizeM2: actualAreaM2,
+      areaUnit,
+      landOwnershipStatus: landOwnershipStatus || 'Belum Menguasai',
+      landOwnershipType,
+      landDocumentUrl: landDocumentUrl || undefined,
+      landDocumentName: landDocumentFile?.name || (landOwnershipStatus === 'Sudah Menguasai' ? 'SHGB_Dokumen.pdf' : undefined),
+      streetAddress: streetAddress || '',
+      province: province || 'Jawa Barat',
+      city: city || 'Bandung',
+      district: district || '',
+      village: village || '',
+      postalCode: postalCode || '',
+      buildingCount: buildingCount || 1,
+      buildingFloors: buildingFloors || 1,
+      buildingHeightMeters: buildingHeightMeters || 4,
+      imbStatus: imbStatus || 'Belum Memiliki',
+      hasPolygon,
+      coordinates,
+      polygonShapefileUrl: polygonShapefileUrl || undefined,
+      polygonGeoJson,
+      servicePackage: 'COMPLETE_RTB',
+      basePriceMultiplier: pricingResult.basePriceMultiplier,
+      totalCost: pricingResult.finalPrice,
+      subtotalBeforeDiscount: pricingResult.subtotal,
+      discountCode: pricingResult.discountCode,
+      discountAmount: pricingResult.discountAmount,
+      isAbove3000m2: pricingResult.isAbove3000m2,
+      assessmentFactors: pricingResult.isAbove3000m2 ? factors : undefined,
+      paymentStatus: 'UNPAID',
+    };
 
-      createdOrder = await parseJsonResponse<OrderItem>(res, 'Gagal menyimpan pesanan');
-    } catch (networkOrApiErr: any) {
-      console.warn('[OrderForm] Backend API offline atau tidak terjangkau. Mengaktifkan sinkronisasi otomatis Cloud & Lokal:', networkOrApiErr);
-      
-      // Fallback: Bentuk pesanan resmi langsung di client agar proses transaksi tidak terputus
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, '0');
-      const dateCode = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
-      const randomSuffix = Math.floor(100 + Math.random() * 900);
-      const trackingCode = `POL-${now.getFullYear()}-${dateCode.slice(4)}-${randomSuffix}`;
-      const uniqueId = `order_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    let createdOrder: OrderItem = newOrderData;
 
-      createdOrder = {
-        id: uniqueId,
-        trackingCode,
-        queueNumber: `#${String(randomSuffix).slice(-2)}`,
-        createdAt: now.toISOString(),
-        status: 'Menunggu Pembayaran',
-        companyName,
-        contactName: contactName || companyName,
-        contactPhone,
-        contactEmail: contactEmail || '',
-        kbliCode: kbliCode || '68111',
-        kbliName: kbliName || 'Real Estat',
-        areaSizeM2: actualAreaM2,
-        areaUnit,
-        landOwnershipStatus: landOwnershipStatus || 'Belum Menguasai',
-        landOwnershipType,
-        landDocumentUrl: landDocumentUrl || undefined,
-        landDocumentName: landDocumentFile?.name || (landOwnershipStatus === 'Sudah Menguasai' ? 'SHGB_Dokumen.pdf' : undefined),
-        streetAddress: streetAddress || '',
-        province: province || 'Jawa Barat',
-        city: city || 'Bandung',
-        district: district || '',
-        village: village || '',
-        postalCode: postalCode || '',
-        buildingCount: buildingCount || 1,
-        buildingFloors: buildingFloors || 1,
-        buildingHeightMeters: buildingHeightMeters || 4,
-        imbStatus: imbStatus || 'Belum Memiliki',
-        hasPolygon,
-        coordinates,
-        polygonShapefileUrl: polygonShapefileUrl || undefined,
-        polygonGeoJson,
-        servicePackage: 'COMPLETE_RTB',
-        basePriceMultiplier: pricingResult.basePriceMultiplier,
-        totalCost: pricingResult.finalPrice,
-        subtotalBeforeDiscount: pricingResult.subtotal,
-        discountCode: pricingResult.discountCode,
-        discountAmount: pricingResult.discountAmount,
-        isAbove3000m2: pricingResult.isAbove3000m2,
-        assessmentFactors: pricingResult.isAbove3000m2 ? factors : undefined,
-        paymentStatus: 'UNPAID',
-      };
+    // Coba kirim juga ke backend jika backend aktif (opsional)
+    const backendUrl = apiUrl('/api/orders');
+    if (backendUrl && !backendUrl.startsWith('/api')) {
+      try {
+        const res = await fetch(backendUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await parseJsonResponse<OrderItem>(res, 'Gagal menyimpan pesanan');
+        if (data && data.trackingCode) {
+          createdOrder = data;
+        }
+      } catch (err) {
+        console.info('[OrderForm] Berjalan dalam mode Firebase Standalone.');
+      }
     }
 
     if (createdOrder) {
