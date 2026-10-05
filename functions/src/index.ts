@@ -1,12 +1,29 @@
 import * as functions from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 
-// Initialize Firebase Admin
-admin.initializeApp();
-const db = admin.database();
+const DATABASE_URL = "https://pemesanan-688f7-default-rtdb.asia-southeast1.firebasedatabase.app";
+
+// Helper untuk lazy initialization Firebase Admin (mencegah timeout saat deployment metadata discovery)
+function getDb(): admin.database.Database {
+  if (!admin.apps.length) {
+    admin.initializeApp({
+      databaseURL: DATABASE_URL,
+    });
+  }
+  return admin.database();
+}
+
+function getStorageBucket() {
+  if (!admin.apps.length) {
+    admin.initializeApp({
+      databaseURL: DATABASE_URL,
+    });
+  }
+  return admin.storage().bucket();
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
-// XENDIT TYPES
+// XENDIT TYPES & SIMULATION
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface CreateInvoiceParams {
@@ -102,13 +119,12 @@ async function createXenditInvoice(params: CreateInvoiceParams) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FUNCTION 1: Buat Invoice Xendit
-// POST https://<region>-pemesanan-688f7.cloudfunctions.net/createXenditInvoice
+// POST https://<region>-pemesanan-688f7.cloudfunctions.net/createXenditInvoiceFn
 // ─────────────────────────────────────────────────────────────────────────────
 export const createXenditInvoiceFn = functions.onRequest(
   {
     region: "asia-southeast1",
     cors: true,
-    secrets: ["XENDIT_SECRET_KEY"],
   },
   async (req, res) => {
     // Only allow POST
@@ -124,6 +140,7 @@ export const createXenditInvoiceFn = functions.onRequest(
     }
 
     try {
+      const db = getDb();
       // Ambil data pesanan dari Firebase Realtime Database
       const snap = await db.ref(`mapcourse/orders/${trackingCode.toUpperCase()}`).get();
 
@@ -184,7 +201,6 @@ export const xenditWebhook = functions.onRequest(
   {
     region: "asia-southeast1",
     cors: false,
-    secrets: ["XENDIT_WEBHOOK_TOKEN"],
   },
   async (req, res) => {
     if (req.method !== "POST") {
@@ -206,6 +222,7 @@ export const xenditWebhook = functions.onRequest(
 
     if (status === "PAID" || status === "SETTLED") {
       const trackingCode = external_id?.toUpperCase();
+      const db = getDb();
       const snap = await db.ref(`mapcourse/orders/${trackingCode}`).get();
 
       if (snap.exists()) {
@@ -246,7 +263,6 @@ export const uploadFile = functions.onRequest(
     }
 
     try {
-      // Terima base64 file dari frontend
       const {fileBase64, fileName, mimeType, folder = "uploads"} = req.body;
 
       if (!fileBase64 || !fileName) {
@@ -254,7 +270,7 @@ export const uploadFile = functions.onRequest(
         return;
       }
 
-      const bucket = admin.storage().bucket();
+      const bucket = getStorageBucket();
       const base64Data = fileBase64.replace(/^data:[^;]+;base64,/, "");
       const buffer = Buffer.from(base64Data, "base64");
 
