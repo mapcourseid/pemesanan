@@ -17,6 +17,8 @@ export const API_BASE_URL = RAW_API_BASE_URL.endsWith('/api')
   ? RAW_API_BASE_URL.slice(0, -4)
   : RAW_API_BASE_URL;
 
+const DEFAULT_REMOTE_BACKEND = 'https://ais-pre-hifhppexf446mwet4e2m3x-475639676104.asia-southeast1.run.app';
+
 /**
  * Buat URL Cloud Function.
  * Jika VITE_FUNCTIONS_URL tersedia, gunakan itu.
@@ -43,6 +45,16 @@ export function apiUrl(path: string): string {
     if (cleanPath === '/api/upload') {
       return `${FUNCTIONS_BASE_URL}/uploadFile`;
     }
+  }
+
+  // Jika diakses dari domain statis Firebase Hosting tanpa backend lokal
+  if (
+    !API_BASE_URL &&
+    typeof window !== 'undefined' &&
+    (window.location.hostname.includes('firebaseapp.com') ||
+      window.location.hostname.includes('web.app'))
+  ) {
+    return `${DEFAULT_REMOTE_BACKEND}${cleanPath}`;
   }
 
   // Fallback ke Railway / localhost
