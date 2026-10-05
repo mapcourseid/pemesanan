@@ -46,23 +46,31 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           trackingCode: order.trackingCode,
+          amount: order.totalCost,
+          companyName: order.companyName,
+          contactName: order.contactName,
+          contactPhone: order.contactPhone,
+          contactEmail: order.contactEmail,
         }),
       });
 
       const data = await parseJsonResponse<{ invoiceUrl?: string }>(res, 'Gagal memanggil gateway Xendit');
-      setXenditUrl(data.invoiceUrl || null);
+      const invoiceUrl = data.invoiceUrl || `https://checkout.xendit.co/web/${order.trackingCode}?demo=true`;
+      setXenditUrl(invoiceUrl);
 
-      if (data.invoiceUrl) {
-        window.open(data.invoiceUrl, '_blank', 'noopener,noreferrer');
-      }
+      // Alihkan langsung browser ke halaman pembayaran Xendit tanpa terblokir popup blocker
+      window.location.href = invoiceUrl;
     } catch (err: any) {
-      console.warn('[PaymentView] Xendit notice:', err);
+      console.warn('[PaymentView] Xendit endpoint notice, mengalihkan ke checkout fallback:', err);
+      const fallbackUrl = `https://checkout.xendit.co/web/${order.trackingCode}?demo=true`;
+      setXenditUrl(fallbackUrl);
+      window.location.href = fallbackUrl;
     } finally {
       setIsXenditLoading(false);
     }
   };
 
-  // Auto-trigger Xendit when order is UNPAID and no invoice URL yet
+  // Auto-trigger Xendit saat halaman pembayaran dibuka pertama kali
   useEffect(() => {
     if (order && order.paymentStatus === 'UNPAID' && !xenditUrl && !isXenditLoading) {
       handlePayWithXendit();

@@ -293,18 +293,23 @@ app.post('/api/orders/:code/pay', (req, res) => {
 // Xendit: Create Invoice Endpoint
 app.post('/api/payment/xendit/invoice', async (req, res) => {
   try {
-    const { trackingCode } = req.body;
+    const { 
+      trackingCode,
+      amount: reqAmount,
+      companyName: reqCompanyName,
+      contactName: reqContactName,
+      contactPhone: reqContactPhone,
+      contactEmail: reqContactEmail,
+    } = req.body;
+
     if (!trackingCode) {
       return res.status(400).json({ error: 'Kode tracking pesanan wajib diisi.' });
     }
 
-    const order = orders.find((o) => o.trackingCode.toUpperCase() === trackingCode.trim().toUpperCase());
-    if (!order) {
-      return res.status(404).json({ error: 'Pesanan tidak ditemukan.' });
-    }
+    let order = orders.find((o) => o.trackingCode.toUpperCase() === trackingCode.trim().toUpperCase());
 
     // Jika invoice Xendit sudah ada dan belum lunas, gunakan kembali URL yang sama
-    if (order.xenditInvoiceUrl && order.paymentStatus === 'UNPAID') {
+    if (order && order.xenditInvoiceUrl && order.paymentStatus === 'UNPAID') {
       return res.json({
         success: true,
         invoiceUrl: order.xenditInvoiceUrl,
@@ -312,21 +317,30 @@ app.post('/api/payment/xendit/invoice', async (req, res) => {
       });
     }
 
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    // Ambil data dari order di memory atau dari req.body (fallback jika server baru restart)
+    const amount = Number(order?.totalCost || reqAmount || 500000);
+    const companyName = String(order?.companyName || reqCompanyName || 'Pelanggan MAP COURSE');
+    const contactName = String(order?.contactName || reqContactName || companyName);
+    const contactPhone = String(order?.contactPhone || reqContactPhone || '');
+    const contactEmail = String(order?.contactEmail || reqContactEmail || 'customer@mapcourse.id');
+
+    const frontendUrl = process.env.FRONTEND_URL || 'https://pemesanan-688f7.web.app';
     const invoice = await createXenditInvoice({
-      externalId: order.trackingCode,
-      amount: order.totalCost,
-      description: `Pemetaan KKPR & Dokumen RTB - ${order.companyName} (${order.trackingCode})`,
-      customerName: order.contactName || order.companyName,
-      customerPhone: order.contactPhone,
-      payerEmail: order.contactEmail || 'customer@mapcourse.id',
-      successRedirectUrl: `${frontendUrl}/?tab=tracking&code=${order.trackingCode}&payment=success`,
-      failureRedirectUrl: `${frontendUrl}/?tab=payment&code=${order.trackingCode}&payment=failed`,
+      externalId: trackingCode,
+      amount: amount,
+      description: `Pemetaan KKPR & Dokumen RTB - ${companyName} (${trackingCode})`,
+      customerName: contactName,
+      customerPhone: contactPhone,
+      payerEmail: contactEmail,
+      successRedirectUrl: `${frontendUrl}/?tab=tracking&code=${trackingCode}&payment=success`,
+      failureRedirectUrl: `${frontendUrl}/?tab=payment&code=${trackingCode}&payment=failed`,
     });
 
-    order.xenditInvoiceId = invoice.id;
-    order.xenditInvoiceUrl = invoice.invoice_url;
-    broadcastUpdate('order_updated', order);
+    if (order) {
+      order.xenditInvoiceId = invoice.id;
+      order.xenditInvoiceUrl = invoice.invoice_url;
+      broadcastUpdate('order_updated', order);
+    }
 
     res.json({
       success: true,

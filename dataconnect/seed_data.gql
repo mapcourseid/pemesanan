@@ -1,0 +1,25 @@
+mutation SeedDatabase @transaction {
+  user_insertMany(data: [
+    {id: "00000000-0000-0000-0000-000000000001", name: "Alice Smith", email: "alice@example.com", role: "CUSTOMER"},
+    {id: "00000000-0000-0000-0000-000000000002", name: "Bob Jones", email: "bob@example.com", role: "CUSTOMER"},
+    {id: "00000000-0000-0000-0000-000000000003", name: "Charlie Admin", email: "charlie@admin.com", role: "ADMIN"}
+  ])
+  category_insertMany(data: [
+    {id: "10000000-0000-0000-0000-000000000001", name: "Electronics", description: "Gadgets and devices"},
+    {id: "10000000-0000-0000-0000-000000000002", name: "Books", description: "Reading materials"},
+    {id: "10000000-0000-0000-0000-000000000003", name: "Home", description: "Furniture and decor"}
+  ])
+  item_insertMany(data: [
+    {id: "20000000-0000-0000-0000-000000000001", title: "Laptop", price: 999.99, categoryId: "10000000-0000-0000-0000-000000000001"},
+    {id: "20000000-0000-0000-0000-000000000002", title: "Headphones", price: 150.00, categoryId: "10000000-0000-0000-0000-000000000001"},
+    {id: "20000000-0000-0000-0000-000000000003", title: "Cooking Pot", price: 45.00, categoryId: "10000000-0000-0000-0000-000000000003"}
+  ])
+  order_insertMany(data: [
+    {id: "30000000-0000-0000-0000-000000000001", userId: "00000000-0000-0000-0000-000000000001", status: "PENDING", createdAt: "2023-10-01T10:00:00Z"},
+    {id: "30000000-0000-0000-0000-000000000002", userId: "00000000-0000-0000-0000-000000000002", status: "COMPLETED", createdAt: "2023-10-02T12:00:00Z"}
+  ])
+  orderItem_insertMany(data: [
+    {id: "40000000-0000-0000-0000-000000000001", orderId: "30000000-0000-0000-0000-000000000001", itemId: "20000000-0000-0000-0000-000000000001", quantity: 1},
+    {id: "40000000-0000-0000-0000-000000000002", orderId: "30000000-0000-0000-0000-000000000002", itemId: "20000000-0000-0000-0000-000000000003", quantity: 2}
+  ])
+}

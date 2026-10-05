@@ -1,0 +1,139 @@
+mutation InsertUser($data: User_Data!) @auth(level: USER) {
+  user_insert(data: $data)
+}
+
+mutation UpsertUser($data: User_Data!) @auth(level: USER) {
+  user_upsert(data: $data)
+}
+
+mutation UpdateUser($id: UUID!, $data: User_Data!) @auth(level: USER) {
+  user_update(id: $id, data: $data)
+}
+
+mutation DeleteUser($id: UUID!) @auth(level: USER) {
+  user_delete(id: $id)
+}
+
+query GetUser($id: UUID!) @auth(level: USER) {
+  user(id: $id) {
+    id name email role phoneNumber avatarUrl
+  }
+}
+
+query ListUsers @auth(level: PUBLIC, insecureReason: "Listing users is needed for public directory") {
+  users {
+    id name email role
+  }
+}
+
+mutation InsertCategory($data: Category_Data!) @auth(level: USER) {
+  category_insert(data: $data)
+}
+
+mutation UpsertCategory($data: Category_Data!) @auth(level: USER) {
+  category_upsert(data: $data)
+}
+
+mutation UpdateCategory($id: UUID!, $data: Category_Data!) @auth(level: USER) {
+  category_update(id: $id, data: $data)
+}
+
+mutation DeleteCategory($id: UUID!) @auth(level: USER) {
+  category_delete(id: $id)
+}
+
+query GetCategory($id: UUID!) @auth(level: PUBLIC, insecureReason: "Categories are public data") {
+  category(id: $id) {
+    id name description
+  }
+}
+
+query ListCategories @auth(level: PUBLIC, insecureReason: "Categories are public data") {
+  categories {
+    id name description
+  }
+}
+
+mutation InsertItem($data: Item_Data!) @auth(level: USER) {
+  item_insert(data: $data)
+}
+
+mutation UpsertItem($data: Item_Data!) @auth(level: USER) {
+  item_upsert(data: $data)
+}
+
+mutation UpdateItem($id: UUID!, $data: Item_Data!) @auth(level: USER) {
+  item_update(id: $id, data: $data)
+}
+
+mutation DeleteItem($id: UUID!) @auth(level: USER) {
+  item_delete(id: $id)
+}
+
+query GetItem($id: UUID!) @auth(level: PUBLIC, insecureReason: "Items are public shop data") {
+  item(id: $id) {
+    id title price description imageUrl category { name }
+  }
+}
+
+query ListItems @auth(level: PUBLIC, insecureReason: "Items are public shop data") {
+  items {
+    id title price
+  }
+}
+
+mutation InsertOrder($data: Order_Data!) @auth(level: USER) {
+  order_insert(data: $data)
+}
+
+mutation UpsertOrder($data: Order_Data!) @auth(level: USER) {
+  order_upsert(data: $data)
+}
+
+mutation UpdateOrder($id: UUID!, $data: Order_Data!) @auth(level: USER) {
+  order_update(id: $id, data: $data)
+}
+
+mutation DeleteOrder($id: UUID!) @auth(level: USER) {
+  order_delete(id: $id)
+}
+
+query GetOrder($id: UUID!) @auth(level: USER) {
+  order(id: $id) {
+    id status createdAt totalAmount user { name }
+  }
+}
+
+query ListMyOrders @auth(level: USER) {
+  orders(where: {userId: {eq_expr: "auth.uid"}}) {
+    id status createdAt totalAmount
+  }
+}
+
+mutation InsertOrderItem($data: OrderItem_Data!) @auth(level: USER) {
+  orderItem_insert(data: $data)
+}
+
+mutation UpsertOrderItem($data: OrderItem_Data!) @auth(level: USER) {
+  orderItem_upsert(data: $data)
+}
+
+mutation UpdateOrderItem($id: UUID!, $data: OrderItem_Data!) @auth(level: USER) {
+  orderItem_update(id: $id, data: $data)
+}
+
+mutation DeleteOrderItem($id: UUID!) @auth(level: USER) {
+  orderItem_delete(id: $id)
+}
+
+query GetOrderItem($id: UUID!) @auth(level: USER) {
+  orderItem(id: $id) {
+    id quantity notes item { title }
+  }
+}
+
+query ListOrderItems($orderId: UUID!) @auth(level: USER) {
+  orderItems(where: {orderId: {eq: $orderId}}) {
+    id quantity notes item { title }
+  }
+}
