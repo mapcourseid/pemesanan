@@ -161,7 +161,9 @@ export const createXenditInvoiceFn = functions.onRequest(
         return;
       }
 
-      const frontendUrl = process.env.FRONTEND_URL || "https://pemesanan-688f7.web.app";
+      const { frontendUrl: reqFrontendUrl } = req.body;
+      const rawFrontendUrl = reqFrontendUrl || process.env.FRONTEND_URL || "https://pemesanan-688f7.web.app";
+      const frontendUrl = rawFrontendUrl.trim().replace(/\/+$/, "");
 
       const invoice = await createXenditInvoice({
         externalId: order.trackingCode,
@@ -170,7 +172,7 @@ export const createXenditInvoiceFn = functions.onRequest(
         customerName: order.contactName || order.companyName,
         customerPhone: order.contactPhone,
         payerEmail: order.contactEmail || "customer@mapcourse.id",
-        successRedirectUrl: `${frontendUrl}/?payment=success&code=${order.trackingCode}`,
+        successRedirectUrl: `${frontendUrl}/?tab=tracking&code=${order.trackingCode}&payment=success`,
         failureRedirectUrl: `${frontendUrl}/?tab=payment&code=${order.trackingCode}&payment=failed`,
       });
 

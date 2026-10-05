@@ -322,9 +322,10 @@ app.post('/api/payment/xendit/invoice', async (req, res) => {
     const companyName = String(order?.companyName || reqCompanyName || 'Pelanggan MAP COURSE');
     const contactName = String(order?.contactName || reqContactName || companyName);
     const contactPhone = String(order?.contactPhone || reqContactPhone || '');
-    const contactEmail = String(order?.contactEmail || reqContactEmail || 'customer@mapcourse.id');
+    const { frontendUrl: reqFrontendUrl } = req.body;
+    const rawFrontendUrl = reqFrontendUrl || process.env.FRONTEND_URL || 'https://pemesanan-688f7.web.app';
+    const frontendUrl = rawFrontendUrl.trim().replace(/\/+$/, '');
 
-    const frontendUrl = process.env.FRONTEND_URL || 'https://pemesanan-688f7.web.app';
     const invoice = await createXenditInvoice({
       externalId: trackingCode,
       amount: amount,

@@ -51,6 +51,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
           contactName: order.contactName,
           contactPhone: order.contactPhone,
           contactEmail: order.contactEmail,
+          frontendUrl: window.location.origin,
         }),
       });
 
