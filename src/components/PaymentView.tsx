@@ -23,6 +23,7 @@ import { syncOrderToFirebase } from '../services/firebase';
 import { requestXenditInvoice, fetchXenditInvoiceByCode } from '../services/xenditClient';
 import { WhatsAppPreviewModal } from './WhatsAppPreviewModal';
 import { XenditPaymentModal } from './XenditPaymentModal';
+import { GeneratedInvoiceView } from './GeneratedInvoiceView';
 
 interface PaymentViewProps {
   order: OrderItem | null;
@@ -273,6 +274,10 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
   }
 
   const isPaid = order.paymentStatus === 'PAID';
+
+  if (isPaid) {
+    return <GeneratedInvoiceView order={order} onGoToTracking={onGoToTracking} />;
+  }
 
   const waWelcomeMessage = `Terima kasih! Pembayaran Anda telah kami terima.\n\nNomor Antrean Pengerjaan Anda: ${order.queueNumber || '#08'}.\nNomor Invoice: ${order.invoiceNumber || 'INV/20261003/POL-014'}\nTotal Tagihan: ${formatRupiah(order.totalCost)}\n\nPantau progres pengerjaan Polygon & RTB Anda secara langsung di sini: https://tracking.domainanda.com/track/${order.trackingCode}`;
 
