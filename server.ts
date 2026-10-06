@@ -42,7 +42,7 @@ async function startServer() {
     if (fs.existsSync(distDir)) {
       app.use(express.static(distDir));
       app.use((req, res, next) => {
-        if (req.method !== 'GET') return next();
+        if (req.method !== 'GET' && req.method !== 'HEAD') return next();
         if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
           return next();
         }
@@ -62,7 +62,7 @@ async function startServer() {
     app.use(vite.middlewares);
 
     app.use(async (req, res, next) => {
-      if (req.method !== 'GET') return next();
+      if (req.method !== 'GET' && req.method !== 'HEAD') return next();
       if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
         return next();
       }
@@ -70,7 +70,11 @@ async function startServer() {
         const url = req.originalUrl;
         let template = fs.readFileSync(path.resolve('index.html'), 'utf-8');
         template = await vite.transformIndexHtml(url, template);
-        res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
+        if (req.method === 'HEAD') {
+          res.status(200).set({ 'Content-Type': 'text/html' }).end();
+        } else {
+          res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
+        }
       } catch (e: any) {
         vite.ssrFixStacktrace(e);
         next(e);

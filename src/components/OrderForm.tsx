@@ -288,40 +288,6 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
     e.preventDefault();
     setIsSubmitting(true);
 
-    // Pre-open tab seketika pada user click event agar TIDAK DIBLOKIR oleh popup blocker browser
-    let paymentWindow: Window | null = null;
-    try {
-      paymentWindow = window.open('about:blank', '_blank');
-      if (paymentWindow) {
-        paymentWindow.document.write(`
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <title>Menghubungkan ke Xendit Payment Gateway...</title>
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <style>
-                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #faf5ff; color: #581c87; text-align: center; }
-                .card { background: white; padding: 36px; border-radius: 24px; box-shadow: 0 10px 30px rgba(125,63,235,0.15); border: 1px solid #e9d5ff; max-width: 420px; width: 90%; }
-                .spinner { width: 44px; height: 44px; border: 4px solid #f3e8ff; border-top: 4px solid #7d3feb; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px; }
-                @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-                h2 { margin: 0 0 10px; font-size: 18px; color: #3b0764; font-weight: 800; }
-                p { margin: 0; font-size: 13px; color: #6b21a8; line-height: 1.5; }
-              </style>
-            </head>
-            <body>
-              <div class="card">
-                <div class="spinner"></div>
-                <h2>Menghubungkan ke Xendit Gateway</h2>
-                <p>Sedang memproses pesanan dan menerbitkan tagihan resmi MAP COURSE. Halaman pembayaran akan segera terbuka...</p>
-              </div>
-            </body>
-          </html>
-        `);
-      }
-    } catch {
-      // ignore
-    }
-
     const payload = {
       companyName,
       contactName,
@@ -427,7 +393,25 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
     }
 
     if (createdOrder) {
-      // 1. Buat tagihan resmi Xendit secara otomatis & langsung hubungkan ke Xendit Payment Gateway
+      // 1. Simpan ke local cache untuk jaminan ketersediaan data tracking
+      try {
+        const stored = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
+        stored.unshift(createdOrder);
+        localStorage.setItem('mapcourse_local_orders', JSON.stringify(stored));
+      } catch (e) {
+        console.warn('LocalStorage save error:', e);
+      }
+
+      // 2. Sinkronkan ke Firebase Realtime Database
+      try {
+        await syncOrderToFirebase(createdOrder);
+      } catch (e) {
+        console.warn('Firebase sync error:', e);
+      }
+
+      onOrderCreated(createdOrder);
+
+      // 3. Buat tagihan resmi Xendit dan langsung alihkan peramban di tab yang sama
       try {
         const invResult = await requestXenditInvoice({
           trackingCode: createdOrder.trackingCode,
@@ -442,43 +426,27 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
           createdOrder.xenditInvoiceUrl = invResult.invoiceUrl;
           createdOrder.xenditInvoiceId = invResult.invoiceId;
 
-          // Langsung alihkan tab yang sudah terbuka ke URL checkout resmi Xendit!
-          if (paymentWindow && !paymentWindow.closed) {
-            paymentWindow.location.href = invResult.invoiceUrl;
-          } else {
-            try {
-              window.location.href = invResult.invoiceUrl;
-            } catch { /* ignore */ }
-          }
+          try {
+            const stored = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
+            const idx = stored.findIndex((o: any) => o.trackingCode === createdOrder.trackingCode);
+            if (idx !== -1) stored[idx] = createdOrder;
+            localStorage.setItem('mapcourse_local_orders', JSON.stringify(stored));
+            await syncOrderToFirebase(createdOrder);
+          } catch { /* ignore */ }
+
+          // Alihkan pengguna ke halaman checkout Xendit di tab yang sama (tanpa popup tab baru)
+          window.location.href = invResult.invoiceUrl;
+          return;
         } else {
-          if (paymentWindow && !paymentWindow.closed) {
-            paymentWindow.location.href = `${window.location.origin}/?tab=payment&code=${createdOrder.trackingCode}`;
-          }
+          // Fallback ke tab pembayaran internal di tab yang sama
+          window.location.href = `${window.location.origin}/?tab=payment&code=${createdOrder.trackingCode}`;
+          return;
         }
       } catch (invErr) {
-        console.warn('[OrderForm] Auto Xendit invoice creation notice:', invErr);
-        if (paymentWindow && !paymentWindow.closed) {
-          paymentWindow.location.href = `${window.location.origin}/?tab=payment&code=${createdOrder.trackingCode}`;
-        }
+        console.warn('[OrderForm] Xendit invoice creation notice:', invErr);
+        window.location.href = `${window.location.origin}/?tab=payment&code=${createdOrder.trackingCode}`;
+        return;
       }
-
-      // 2. Simpan ke local cache untuk jaminan ketersediaan data tracking
-      try {
-        const stored = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
-        stored.unshift(createdOrder);
-        localStorage.setItem('mapcourse_local_orders', JSON.stringify(stored));
-      } catch (e) {
-        console.warn('LocalStorage save error:', e);
-      }
-
-      // 3. Sinkronkan ke Firebase Realtime Database
-      try {
-        await syncOrderToFirebase(createdOrder);
-      } catch (e) {
-        console.warn('Firebase sync error:', e);
-      }
-
-      onOrderCreated(createdOrder);
     } else {
       setFormError('Terjadi kesalahan saat memproses data pesanan. Silakan periksa kelengkapan form.');
     }

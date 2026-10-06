@@ -116,14 +116,36 @@ export function App() {
       } catch { /* ignore */ }
     }
 
-    if (!order) {
-      try {
-        const xenditInv = await fetchXenditInvoiceByCode(trackingCode);
-        if (xenditInv) {
+    // Selalu cek status terbaru langsung dari server Xendit
+    try {
+      const xenditInv = await fetchXenditInvoiceByCode(trackingCode);
+      if (xenditInv) {
+        if (!order) {
           order = buildOrderFromXendit(trackingCode, xenditInv);
+        } else if (
+          (xenditInv.status === 'SETTLED' || xenditInv.status === 'PAID') &&
+          order.paymentStatus !== 'PAID'
+        ) {
+          order = {
+            ...order,
+            paymentStatus: 'PAID',
+            status: order.status === 'Menunggu Pembayaran' ? 'Verifikasi Berkas' : order.status,
+            paidAt: xenditInv.paid_at || new Date().toISOString(),
+            paymentMethod: `Xendit (${xenditInv.payment_channel || xenditInv.payment_method || 'Virtual Account'})`,
+            invoiceNumber: order.invoiceNumber || `INV/${new Date().getFullYear()}/${order.trackingCode}`,
+          };
+
+          // Simpan pembaruan status
+          try {
+            const stored: OrderItem[] = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
+            const idx = stored.findIndex((o) => o.trackingCode === trackingCode);
+            if (idx !== -1) stored[idx] = order; else stored.unshift(order);
+            localStorage.setItem('mapcourse_local_orders', JSON.stringify(stored));
+            await syncOrderToFirebase(order);
+          } catch { /* ignore */ }
         }
-      } catch { /* ignore */ }
-    }
+      }
+    } catch { /* ignore */ }
 
     if (order) {
       setCurrentOrder(order);
