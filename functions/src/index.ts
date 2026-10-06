@@ -52,7 +52,7 @@ function getSimulatedInvoice(params: CreateInvoiceParams) {
 }
 
 async function createXenditInvoice(params: CreateInvoiceParams) {
-  const secretKey = process.env.XENDIT_SECRET_KEY || "";
+  const secretKey = process.env.XENDIT_SECRET_KEY || "xnd_development_iW708a37TiEdyhC9o41R6yDbXcsZl9eI1K397LENvmS24tpUay89P06TFPg";
 
   const isInvalidKey =
     !secretKey ||

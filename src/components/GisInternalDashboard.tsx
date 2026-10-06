@@ -24,7 +24,13 @@ import {
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
-  CreditCard
+  CreditCard,
+  Building2,
+  MapPin,
+  Mail,
+  Phone,
+  Shield,
+  Compass
 } from 'lucide-react';
 import type { OrderItem, OrderStatus } from '../types';
 import { formatRupiah, AVAILABLE_COUPONS } from '../utils/pricing';
@@ -1054,102 +1060,251 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
                 </div>
               </div>
 
-              {/* 2. Unduh Raw Data Customer */}
-              <div className="space-y-3">
-                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  Raw Data & Spesifikasi Input Customer
-                </h3>
+              {/* 2. Informasi Lengkap Pendaftaran Klien (Sesuai Form Pendaftaran) */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-[#7d3feb]" />
+                    Informasi Lengkap Pendaftaran Proyek (Formulir Klien)
+                  </h3>
+                  <span className="text-[11px] font-mono text-[#7d3feb] font-bold bg-purple-50 px-2.5 py-1 rounded-full border border-purple-200">
+                    ID: {selectedOrder.trackingCode}
+                  </span>
+                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-500 font-medium">Legalitas Lahan:</span>
-                      <span className="font-bold text-slate-900">
-                        {selectedOrder.landOwnershipStatus} ({selectedOrder.landOwnershipType || 'N/A'})
-                      </span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  {/* Bagian 1: Data Perusahaan & Kontak PIC */}
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                    <div className="flex items-center gap-2 text-slate-800 font-bold text-xs pb-1 border-b border-slate-200">
+                      <UserCheck className="w-4 h-4 text-[#7d3feb]" />
+                      <span>Identitas Pemohon &amp; Kontak PIC</span>
                     </div>
 
-                    {selectedOrder.landDocumentUrl ? (
-                      <div className="pt-2 border-t border-slate-200/80 space-y-1.5">
-                        <div className="text-[11px] text-slate-600 font-medium truncate flex items-center gap-1.5">
-                          <FileText className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                          <span className="truncate">{selectedOrder.landDocumentName || 'Dokumen_Legalitas_Lahan.pdf'}</span>
-                        </div>
+                    <div className="space-y-2 text-slate-600">
+                      <div className="flex justify-between items-start">
+                        <span className="text-slate-500 font-medium">Nama Perusahaan:</span>
+                        <span className="font-bold text-slate-900 text-right">{selectedOrder.companyName}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 font-medium">Nama PIC:</span>
+                        <span className="font-bold text-slate-900">{selectedOrder.contactName || '-'}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 font-medium">No. WhatsApp / HP:</span>
                         <a
-                          href={fileUrl(selectedOrder.landDocumentUrl)}
-                          download={selectedOrder.landDocumentName || `Berkas_Legalitas_${selectedOrder.trackingCode}.pdf`}
+                          href={`https://wa.me/${selectedOrder.contactPhone.replace(/^0/, '62').replace(/[^0-9]/g, '')}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex items-center justify-center gap-1.5 w-full py-1.5 px-3 bg-[#7d3feb] hover:bg-[#6f2cdb] text-white rounded-lg text-xs font-bold transition shadow-sm"
+                          className="font-bold text-[#7d3feb] underline flex items-center gap-1 hover:text-[#5e23be]"
                         >
-                          <Download className="w-3.5 h-3.5" />
-                          <span>Unduh Berkas Legalitas Lahan</span>
+                          <Phone className="w-3 h-3" />
+                          <span>{selectedOrder.contactPhone}</span>
                         </a>
                       </div>
-                    ) : (
-                      <div className="pt-1 text-[11px] text-slate-400 italic">
-                        {selectedOrder.landDocumentName ? (
-                          <span>File: {selectedOrder.landDocumentName} (Menunggu upload fisik)</span>
-                        ) : (
-                          <span>Belum ada berkas dokumen fisik yang diunggah</span>
-                        )}
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 font-medium">Email PIC:</span>
+                        <span className="font-mono text-slate-800 truncate max-w-[180px]">{selectedOrder.contactEmail || '-'}</span>
                       </div>
-                    )}
+                      <div className="flex justify-between items-center pt-1 border-t border-slate-200">
+                        <span className="text-slate-500 font-medium">Nomor Antrean:</span>
+                        <span className="font-mono font-black text-[#7d3feb] bg-purple-100 px-2 py-0.5 rounded">
+                          {selectedOrder.queueNumber || '-'}
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-                    <span className="text-slate-500 font-medium">KBLI & Bangunan:</span>
-                    <div className="font-bold text-slate-900">
-                      {selectedOrder.kbliCode} - {selectedOrder.kbliName}
+                  {/* Bagian 2: Alamat Lengkap & Administrasi Wilayah */}
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                    <div className="flex items-center gap-2 text-slate-800 font-bold text-xs pb-1 border-b border-slate-200">
+                      <MapPin className="w-4 h-4 text-[#7d3feb]" />
+                      <span>Lokasi &amp; Administrasi Wilayah Lahan</span>
                     </div>
-                    <div className="text-slate-600">
-                      {selectedOrder.buildingCount} Unit • {selectedOrder.buildingFloors} Lt • {selectedOrder.buildingHeightMeters}m
+
+                    <div className="space-y-2 text-slate-600">
+                      <div>
+                        <span className="text-slate-500 font-medium block">Alamat Lengkap / Jalan:</span>
+                        <span className="font-bold text-slate-900 block mt-0.5 leading-snug">
+                          {selectedOrder.streetAddress || 'Tidak dicantumkan'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-200">
+                        <div>
+                          <span className="text-slate-500 text-[11px] block">Kelurahan / Desa:</span>
+                          <span className="font-bold text-slate-800">{selectedOrder.village || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 text-[11px] block">Kecamatan:</span>
+                          <span className="font-bold text-slate-800">{selectedOrder.district || '-'}</span>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-slate-500 text-[11px] block">Kabupaten / Kota:</span>
+                          <span className="font-bold text-slate-800">{selectedOrder.city || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 text-[11px] block">Provinsi:</span>
+                          <span className="font-bold text-slate-800">{selectedOrder.province || '-'}</span>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center pt-1 border-t border-slate-200">
+                        <span className="text-slate-500 font-medium">Kode Pos:</span>
+                        <span className="font-mono font-bold text-slate-800">{selectedOrder.postalCode || '-'}</span>
+                      </div>
                     </div>
-                    <div className="text-[11px] text-slate-500 pt-1">
-                      Status IMB: <strong>{selectedOrder.imbStatus || 'Belum Memiliki'}</strong>
+                  </div>
+
+                  {/* Bagian 3: Legalitas & Bukti Penguasaan Lahan */}
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                    <div className="flex items-center gap-2 text-slate-800 font-bold text-xs pb-1 border-b border-slate-200">
+                      <Shield className="w-4 h-4 text-[#7d3feb]" />
+                      <span>Legalitas &amp; Dokumen Penguasaan Lahan</span>
+                    </div>
+
+                    <div className="space-y-2 text-slate-600">
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 font-medium">Status Penguasaan:</span>
+                        <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
+                          selectedOrder.landOwnershipStatus === 'Sudah Menguasai'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {selectedOrder.landOwnershipStatus || 'Belum Menguasai'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 font-medium">Jenis Hak Atas Tanah:</span>
+                        <span className="font-bold text-slate-900">{selectedOrder.landOwnershipType || '-'}</span>
+                      </div>
+
+                      {/* Download Berkas Dokumen Fisik */}
+                      <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                        <span className="text-slate-500 text-[11px] font-medium block">Berkas Bukti Legalitas:</span>
+                        {selectedOrder.landDocumentUrl ? (
+                          <div className="space-y-1.5">
+                            <div className="text-[11px] text-slate-700 font-semibold truncate flex items-center gap-1.5">
+                              <FileText className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                              <span className="truncate">{selectedOrder.landDocumentName || 'Dokumen_Legalitas_Lahan.pdf'}</span>
+                            </div>
+                            <a
+                              href={fileUrl(selectedOrder.landDocumentUrl)}
+                              download={selectedOrder.landDocumentName || `Berkas_Legalitas_${selectedOrder.trackingCode}.pdf`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center justify-center gap-1.5 w-full py-2 px-3 bg-[#7d3feb] hover:bg-[#6f2cdb] text-white rounded-xl text-xs font-bold transition shadow-sm"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Unduh Berkas Legalitas Lahan</span>
+                            </a>
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-slate-400 italic bg-white p-2 rounded-xl border border-slate-200">
+                            {selectedOrder.landDocumentName
+                              ? `Nama Berkas: ${selectedOrder.landDocumentName} (Menunggu upload file fisik)`
+                              : 'Tidak ada dokumen legalitas fisik yang diunggah klien.'}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bagian 4: Data KBLI & Spesifikasi Bangunan */}
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                    <div className="flex items-center gap-2 text-slate-800 font-bold text-xs pb-1 border-b border-slate-200">
+                      <Building2 className="w-4 h-4 text-[#7d3feb]" />
+                      <span>KBLI OSS &amp; Parameter Bangunan</span>
+                    </div>
+
+                    <div className="space-y-2 text-slate-600">
+                      <div>
+                        <span className="text-slate-500 font-medium block">Kode &amp; Uraian KBLI:</span>
+                        <div className="font-bold text-slate-900 mt-0.5 leading-snug">
+                          {selectedOrder.kbliCode} - {selectedOrder.kbliName}
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center pt-1 border-t border-slate-200">
+                        <span className="text-slate-500 font-medium">Total Luas Lahan:</span>
+                        <span className="font-black text-[#7d3feb] text-sm font-mono">
+                          {selectedOrder.areaSizeM2?.toLocaleString('id-ID')} m²
+                          {selectedOrder.areaSizeM2 >= 10000 && ` (${(selectedOrder.areaSizeM2 / 10000).toFixed(2)} Ha)`}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-200 text-center">
+                        <div className="bg-white p-1.5 rounded-xl border border-slate-200">
+                          <span className="text-slate-400 text-[10px] block">Unit Bangunan</span>
+                          <span className="font-bold text-slate-900">{selectedOrder.buildingCount || 1} Unit</span>
+                        </div>
+                        <div className="bg-white p-1.5 rounded-xl border border-slate-200">
+                          <span className="text-slate-400 text-[10px] block">Jumlah Lantai</span>
+                          <span className="font-bold text-slate-900">{selectedOrder.buildingFloors || 1} Lt</span>
+                        </div>
+                        <div className="bg-white p-1.5 rounded-xl border border-slate-200">
+                          <span className="text-slate-400 text-[10px] block">Ketinggian</span>
+                          <span className="font-bold text-slate-900">{selectedOrder.buildingHeightMeters || 4} m</span>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center pt-1 border-t border-slate-200">
+                        <span className="text-slate-500 font-medium">Status IMB / PBG:</span>
+                        <span className="font-bold text-slate-800">{selectedOrder.imbStatus || 'Belum Memiliki'}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                  <div>
-                    <span className="font-bold text-slate-800 block">Draf Polygon / Geometri Customer:</span>
-                    <span className="text-slate-500 text-[11px]">
-                      {selectedOrder.hasPolygon
-                        ? (selectedOrder.polygonShapefileUrl ? 'File Shapefile (.ZIP) diunggah customer' : 'Polygon GeoJSON tersedia')
-                        : `Titik Koordinat: ${selectedOrder.coordinates?.lat?.toFixed(5) || '-'}, ${selectedOrder.coordinates?.lng?.toFixed(5) || '-'}`}
+                {/* Bagian 5: Draf Polygon & Geometri Lahan */}
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between pb-1 border-b border-slate-200 text-xs font-bold text-slate-800">
+                    <span className="flex items-center gap-2">
+                      <Compass className="w-4 h-4 text-[#7d3feb]" />
+                      <span>Data Geometri Peta, Shapefile &amp; Koordinat Customer</span>
+                    </span>
+                    <span className="text-[11px] text-slate-500">
+                      {selectedOrder.hasPolygon ? 'Polygon Tersedia' : 'Titik Titik Pin'}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {selectedOrder.polygonShapefileUrl && (
-                      <a
-                        href={fileUrl(selectedOrder.polygonShapefileUrl)}
-                        download={`Raw_Shapefile_${selectedOrder.trackingCode}.zip`}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#7d3feb] hover:bg-[#6f2cdb] text-white rounded-lg font-bold shadow-sm"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Unduh .ZIP Asli</span>
-                      </a>
-                    )}
-                    {selectedOrder.polygonGeoJson ? (
-                      <button
-                        type="button"
-                        onClick={() => handleDownloadCustomerPolygon(selectedOrder.polygonGeoJson, selectedOrder.trackingCode)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg font-bold text-slate-700 shadow-sm transition"
-                      >
-                        <Download className="w-3.5 h-3.5 text-[#7d3feb]" />
-                        <span>Unduh .GeoJSON</span>
-                      </button>
-                    ) : (
-                      <a
-                        href={fileUrl(selectedOrder.gisResultFiles?.geoJsonUrl || '/uploads/samples/sample_polygon.geojson')}
-                        download={`Draf_Polygon_${selectedOrder.trackingCode}.geojson`}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg font-bold text-slate-700 shadow-sm"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Unduh Geometri Draf</span>
-                      </a>
-                    )}
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                    <div>
+                      <span className="text-slate-500 block">Koordinat Pusat Lahan:</span>
+                      <span className="font-mono font-bold text-slate-800">
+                        {selectedOrder.coordinates
+                          ? `Lat: ${selectedOrder.coordinates.lat?.toFixed(5)}, Lng: ${selectedOrder.coordinates.lng?.toFixed(5)}`
+                          : 'Tidak tersedia'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {selectedOrder.polygonShapefileUrl && (
+                        <a
+                          href={fileUrl(selectedOrder.polygonShapefileUrl)}
+                          download={`Raw_Shapefile_${selectedOrder.trackingCode}.zip`}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#7d3feb] hover:bg-[#6f2cdb] text-white rounded-xl font-bold shadow-sm transition"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Unduh .ZIP Asli Klien</span>
+                        </a>
+                      )}
+                      {selectedOrder.polygonGeoJson ? (
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadCustomerPolygon(selectedOrder.polygonGeoJson, selectedOrder.trackingCode)}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-300 hover:bg-slate-100 rounded-xl font-bold text-slate-700 shadow-sm transition"
+                        >
+                          <Download className="w-3.5 h-3.5 text-[#7d3feb]" />
+                          <span>Unduh .GeoJSON</span>
+                        </button>
+                      ) : (
+                        <a
+                          href={fileUrl(selectedOrder.gisResultFiles?.geoJsonUrl || '/uploads/samples/sample_polygon.geojson')}
+                          download={`Draf_Polygon_${selectedOrder.trackingCode}.geojson`}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-300 hover:bg-slate-100 rounded-xl font-bold text-slate-700 shadow-sm transition"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Unduh Geometri Draf</span>
+                        </a>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
