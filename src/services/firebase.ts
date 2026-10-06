@@ -70,43 +70,79 @@ export function initFirebaseService(): boolean {
 }
 
 export async function syncOrderToFirebase(order: OrderItem): Promise<boolean> {
-  if (!dbInstance) return false;
-  try {
-    const orderRef = ref(dbInstance, `mapcourse/orders/${order.trackingCode.toUpperCase()}`);
-    await set(orderRef, order);
-    console.log(`[Firebase] Order ${order.trackingCode} tersinkronisasi ke cloud!`);
-    return true;
-  } catch (err) {
-    console.warn('[Firebase] Sync notice:', err);
-    return false;
+  const cleanCode = order.trackingCode.trim().toUpperCase();
+
+  // 1. Coba lewat Firebase SDK
+  if (dbInstance) {
+    try {
+      const orderRef = ref(dbInstance, `mapcourse/orders/${cleanCode}`);
+      await set(orderRef, order);
+      console.log(`[Firebase] Order ${cleanCode} tersinkronisasi via SDK!`);
+      return true;
+    } catch (err) {
+      console.warn('[Firebase SDK] Sync notice:', err);
+    }
   }
+
+  // 2. Fallback via Firebase Realtime Database REST API
+  try {
+    const res = await fetch(`https://pemesanan-688f7-default-rtdb.asia-southeast1.firebasedatabase.app/mapcourse/orders/${cleanCode}.json`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(order),
+    });
+    if (res.ok) {
+      console.log(`[Firebase REST] Order ${cleanCode} tersinkronisasi via REST!`);
+      return true;
+    }
+  } catch (restErr) {
+    console.warn('[Firebase REST] Sync notice:', restErr);
+  }
+
+  return false;
 }
 
 export async function fetchSingleOrderFromFirebase(trackingCode: string): Promise<OrderItem | null> {
-  if (!dbInstance || !trackingCode) return null;
-  try {
-    const cleanCode = trackingCode.trim().toUpperCase();
-    const orderRef = ref(dbInstance, `mapcourse/orders/${cleanCode}`);
-    const snapshot = await get(orderRef);
-    if (snapshot.exists()) {
-      return snapshot.val() as OrderItem;
+  if (!trackingCode) return null;
+  const cleanCode = trackingCode.trim().toUpperCase();
+
+  // 1. Coba lewat Firebase SDK jika terhubung
+  if (dbInstance) {
+    try {
+      const orderRef = ref(dbInstance, `mapcourse/orders/${cleanCode}`);
+      const snapshot = await get(orderRef);
+      if (snapshot.exists()) {
+        return snapshot.val() as OrderItem;
+      }
+      
+      const allRef = ref(dbInstance, 'mapcourse/orders');
+      const allSnap = await get(allRef);
+      if (allSnap.exists()) {
+        const allData = allSnap.val();
+        const found = Object.values(allData).find(
+          (o: any) => o?.trackingCode?.toUpperCase() === cleanCode
+        ) as OrderItem | undefined;
+        if (found) return found;
+      }
+    } catch (err) {
+      console.warn('[Firebase SDK] Fetch single order notice:', err);
     }
-    
-    // Fallback: search all orders if key mismatch
-    const allRef = ref(dbInstance, 'mapcourse/orders');
-    const allSnap = await get(allRef);
-    if (allSnap.exists()) {
-      const allData = allSnap.val();
-      const found = Object.values(allData).find(
-        (o: any) => o?.trackingCode?.toUpperCase() === cleanCode
-      ) as OrderItem | undefined;
-      return found || null;
-    }
-    return null;
-  } catch (err) {
-    console.warn('[Firebase] Fetch single order notice:', err);
-    return null;
   }
+
+  // 2. Fallback lewat Firebase REST API
+  try {
+    const res = await fetch(`https://pemesanan-688f7-default-rtdb.asia-southeast1.firebasedatabase.app/mapcourse/orders/${cleanCode}.json`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.trackingCode) {
+        return data as OrderItem;
+      }
+    }
+  } catch (restErr) {
+    console.warn('[Firebase REST] Fetch order notice:', restErr);
+  }
+
+  return null;
 }
 
 export async function deleteOrderFromFirebase(trackingCode: string): Promise<boolean> {

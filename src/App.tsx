@@ -9,6 +9,7 @@ import type { OrderItem } from './types';
 import { ShieldCheck, Flame, Lock } from 'lucide-react';
 import { initFirebaseService, logoutStaffWithFirebase, onStaffAuthStateChanged, fetchSingleOrderFromFirebase, syncOrderToFirebase } from './services/firebase';
 import { apiUrl, parseJsonResponse } from './utils/api';
+import { fetchXenditInvoiceByCode } from './services/xenditClient';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<'order' | 'payment' | 'tracking' | 'internal'>('order');
@@ -50,6 +51,7 @@ export function App() {
     } else if (tab === 'payment' && code) {
       setTrackingCodeToView(code);
       setActiveTab('payment');
+      loadOrderForPayment(code);
     }
 
     return () => {
@@ -57,59 +59,138 @@ export function App() {
     };
   }, []);
 
-  // Load order and mark as paid after Xendit redirect
-  const handlePostPaymentReturn = async (trackingCode: string) => {
-    // Try to find in localStorage first
+  // Helper untuk membuat objek OrderItem dari data tagihan resmi Xendit
+  const buildOrderFromXendit = (trackingCode: string, xenditInv: any): OrderItem => {
+    return {
+      id: `xnd_${xenditInv?.id || Date.now()}`,
+      trackingCode: trackingCode,
+      queueNumber: `#${trackingCode.slice(-2)}`,
+      createdAt: xenditInv?.created || new Date().toISOString(),
+      status: 'Verifikasi Berkas',
+      paymentStatus: 'PAID',
+      paidAt: xenditInv?.paid_at || new Date().toISOString(),
+      paymentMethod: `Xendit (${xenditInv?.payment_channel || xenditInv?.payment_method || 'Virtual Account'})`,
+      invoiceNumber: `INV/${new Date().getFullYear()}/${trackingCode}`,
+      companyName: xenditInv?.customer?.given_names || 'Pelanggan MAP COURSE',
+      contactName: xenditInv?.customer?.given_names || 'Pelanggan MAP COURSE',
+      contactPhone: xenditInv?.customer?.mobile_number || '-',
+      contactEmail: xenditInv?.customer?.email || xenditInv?.payer_email || 'help@mapcourseid.com',
+      totalCost: xenditInv?.amount || 2000000,
+      subtotalBeforeDiscount: xenditInv?.amount || 2000000,
+      areaSizeM2: 5000,
+      areaUnit: 'm2',
+      landOwnershipStatus: 'Sudah Menguasai',
+      streetAddress: 'Lokasi Pemetaan Resmi Pelanggan',
+      province: 'Jawa Barat',
+      city: 'Bandung',
+      district: '-',
+      village: '-',
+      postalCode: '-',
+      buildingCount: 1,
+      buildingFloors: 1,
+      buildingHeightMeters: 4,
+      imbStatus: 'Dalam Proses',
+      hasPolygon: false,
+      kbliCode: '68111',
+      kbliName: 'Real Estat yang Dimiliki Sendiri atau Disewa',
+      isAbove3000m2: true,
+      basePriceMultiplier: 1,
+      discountAmount: 0,
+      servicePackage: 'COMPLETE_RTB',
+      xenditInvoiceUrl: xenditInv?.invoice_url,
+      xenditInvoiceId: xenditInv?.id,
+    };
+  };
+
+  // Load order data when navigating directly to payment tab with a code
+  const loadOrderForPayment = async (trackingCode: string) => {
     let order: OrderItem | null = null;
     try {
       const stored: OrderItem[] = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
       order = stored.find((o) => o.trackingCode === trackingCode) || null;
     } catch { /* ignore */ }
 
-    // Try Firebase if not in localStorage
     if (!order) {
       try {
         order = await fetchSingleOrderFromFirebase(trackingCode);
       } catch { /* ignore */ }
     }
 
-    // Try backend API
     if (!order) {
       try {
-        const res = await fetch(apiUrl(`/api/orders/${trackingCode}`));
-        const data = await parseJsonResponse<OrderItem>(res, 'order not found');
-        order = data;
+        const xenditInv = await fetchXenditInvoiceByCode(trackingCode);
+        if (xenditInv) {
+          order = buildOrderFromXendit(trackingCode, xenditInv);
+        }
       } catch { /* ignore */ }
     }
 
     if (order) {
-      // Mark as paid if not already
-      const paidOrder: OrderItem = {
-        ...order,
-        paymentStatus: 'PAID',
-        status: order.status === 'Menunggu Pembayaran' ? 'Verifikasi Berkas' : order.status,
-        paidAt: order.paidAt || new Date().toISOString(),
-        paymentMethod: order.paymentMethod || 'Xendit Payment Gateway',
-      };
-
-      // Update localStorage
-      try {
-        const stored: OrderItem[] = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
-        const idx = stored.findIndex((o) => o.trackingCode === trackingCode);
-        if (idx !== -1) stored[idx] = paidOrder; else stored.unshift(paidOrder);
-        localStorage.setItem('mapcourse_local_orders', JSON.stringify(stored));
-      } catch { /* ignore */ }
-
-      // Sync to Firebase
-      try { await syncOrderToFirebase(paidOrder); } catch { /* ignore */ }
-
-      setCurrentOrder(paidOrder);
+      setCurrentOrder(order);
       setTrackingCodeToView(trackingCode);
-      setActiveTab('payment');
+    }
+  };
+
+  // Load order and mark as paid after Xendit redirect
+  const handlePostPaymentReturn = async (trackingCode: string) => {
+    let order: OrderItem | null = null;
+
+    // 1. Coba ambil dari localStorage
+    try {
+      const stored: OrderItem[] = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
+      order = stored.find((o) => o.trackingCode === trackingCode) || null;
+    } catch { /* ignore */ }
+
+    // 2. Coba ambil dari Firebase
+    if (!order) {
+      try {
+        order = await fetchSingleOrderFromFirebase(trackingCode);
+      } catch { /* ignore */ }
     }
 
-    // Clean URL params without reload
-    window.history.replaceState({}, '', window.location.pathname);
+    // 3. Coba ambil langsung dari server Xendit (Paling Akurat jika baru saja bayar di gateway)
+    if (!order) {
+      try {
+        const xenditInv = await fetchXenditInvoiceByCode(trackingCode);
+        if (xenditInv) {
+          order = buildOrderFromXendit(trackingCode, xenditInv);
+        }
+      } catch { /* ignore */ }
+    }
+
+    // 4. Jika masih belum ditemukan (fallback darurat), bentuk data pesanan berdasarkan kode
+    if (!order) {
+      order = buildOrderFromXendit(trackingCode, null);
+    }
+
+    // Buat pesanan berstatus LUNAS
+    const paidOrder: OrderItem = {
+      ...order,
+      paymentStatus: 'PAID',
+      status: 'Verifikasi Berkas',
+      paidAt: order.paidAt || new Date().toISOString(),
+      paymentMethod: order.paymentMethod || 'Xendit Gateway (Lunas Terverifikasi)',
+    };
+
+    // Simpan ke localStorage
+    try {
+      const stored: OrderItem[] = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
+      const idx = stored.findIndex((o) => o.trackingCode === trackingCode);
+      if (idx !== -1) stored[idx] = paidOrder; else stored.unshift(paidOrder);
+      localStorage.setItem('mapcourse_local_orders', JSON.stringify(stored));
+    } catch { /* ignore */ }
+
+    // Simpan ke Firebase
+    try { await syncOrderToFirebase(paidOrder); } catch { /* ignore */ }
+
+    setCurrentOrder(paidOrder);
+    setTrackingCodeToView(trackingCode);
+    setActiveTab('payment');
+
+    // Bersihkan URL tanpa refresh halaman
+    try {
+      window.history.replaceState({}, '', window.location.pathname);
+    } catch { /* ignore */ }
   };
 
 

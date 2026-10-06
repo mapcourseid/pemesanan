@@ -23,6 +23,7 @@ import type { AssessmentFactorInput } from '../utils/pricing';
 import type { OrderItem } from '../types';
 import { apiUrl, parseJsonResponse } from '../utils/api';
 import { syncOrderToFirebase } from '../services/firebase';
+import { requestXenditInvoice } from '../services/xenditClient';
 import shp from 'shpjs';
 
 interface OrderFormProps {
@@ -428,42 +429,34 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
     if (createdOrder) {
       // 1. Buat tagihan resmi Xendit secara otomatis & langsung hubungkan ke Xendit Payment Gateway
       try {
-        const invRes = await fetch(apiUrl('/api/payment/xendit/invoice'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            trackingCode: createdOrder.trackingCode,
-            amount: createdOrder.totalCost,
-            companyName: createdOrder.companyName,
-            contactName: createdOrder.contactName,
-            contactPhone: createdOrder.contactPhone,
-            contactEmail: createdOrder.contactEmail,
-            frontendUrl: window.location.origin,
-          }),
+        const invResult = await requestXenditInvoice({
+          trackingCode: createdOrder.trackingCode,
+          totalCost: createdOrder.totalCost,
+          companyName: createdOrder.companyName,
+          contactName: createdOrder.contactName,
+          contactPhone: createdOrder.contactPhone,
+          contactEmail: createdOrder.contactEmail,
         });
-        const invData = await parseJsonResponse<{ invoiceUrl?: string; invoiceId?: string; isSimulated?: boolean }>(invRes, 'Gagal membuat tagihan Xendit');
-        if (invData?.invoiceUrl) {
-          createdOrder.xenditInvoiceUrl = invData.invoiceUrl;
-          createdOrder.xenditInvoiceId = invData.invoiceId || `inv_${createdOrder.trackingCode}`;
 
-          // Jika URL invoice tersedia (baik mode Live Xendit maupun simulator), langsung alihkan tab!
+        if (invResult?.invoiceUrl) {
+          createdOrder.xenditInvoiceUrl = invResult.invoiceUrl;
+          createdOrder.xenditInvoiceId = invResult.invoiceId;
+
+          // Langsung alihkan tab yang sudah terbuka ke URL checkout resmi Xendit!
           if (paymentWindow && !paymentWindow.closed) {
-            paymentWindow.location.href = invData.invoiceUrl;
+            paymentWindow.location.href = invResult.invoiceUrl;
           } else {
-            // Jika popup diblokir peramban, buka langsung via location tab saat ini
             try {
-              window.location.href = invData.invoiceUrl;
+              window.location.href = invResult.invoiceUrl;
             } catch { /* ignore */ }
           }
         } else {
-          // Jika tidak ada URL invoice, alihkan tab ke halaman pembayaran aplikasi
           if (paymentWindow && !paymentWindow.closed) {
             paymentWindow.location.href = `${window.location.origin}/?tab=payment&code=${createdOrder.trackingCode}`;
           }
         }
       } catch (invErr) {
         console.warn('[OrderForm] Auto Xendit invoice creation notice:', invErr);
-        // Jika terjadi gangguan API, alihkan tab ke halaman pembayaran aplikasi agar tidak macet
         if (paymentWindow && !paymentWindow.closed) {
           paymentWindow.location.href = `${window.location.origin}/?tab=payment&code=${createdOrder.trackingCode}`;
         }

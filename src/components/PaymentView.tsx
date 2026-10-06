@@ -20,6 +20,7 @@ import type { OrderItem } from '../types';
 import { formatRupiah } from '../utils/pricing';
 import { apiUrl, parseJsonResponse } from '../utils/api';
 import { syncOrderToFirebase } from '../services/firebase';
+import { requestXenditInvoice } from '../services/xenditClient';
 import { WhatsAppPreviewModal } from './WhatsAppPreviewModal';
 import { XenditPaymentModal } from './XenditPaymentModal';
 
@@ -52,39 +53,24 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
     const prefetchInvoice = async () => {
       setIsXenditLoading(true);
       try {
-        const res = await fetch(apiUrl('/api/payment/xendit/invoice'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            trackingCode: order.trackingCode,
-            amount: order.totalCost,
-            companyName: order.companyName,
-            contactName: order.contactName,
-            contactPhone: order.contactPhone,
-            contactEmail: order.contactEmail,
-            frontendUrl: window.location.origin,
-          }),
+        const invData = await requestXenditInvoice({
+          trackingCode: order.trackingCode,
+          totalCost: order.totalCost,
+          companyName: order.companyName,
+          contactName: order.contactName,
+          contactPhone: order.contactPhone,
+          contactEmail: order.contactEmail,
         });
-
-        const data = await parseJsonResponse<{
-          invoiceUrl?: string;
-          invoiceId?: string;
-          isSimulated?: boolean;
-          warningMessage?: string;
-        }>(res, 'Gagal menyiapkan tagihan Xendit');
 
         if (!isMounted) return;
 
-        if (data.isSimulated) {
-          setIsSimulatedInvoice(true);
-          if (data.warningMessage) setXenditWarningMessage(data.warningMessage);
-        } else if (data.invoiceUrl && !data.invoiceUrl.includes('?demo=true')) {
-          setXenditUrl(data.invoiceUrl);
+        if (invData?.invoiceUrl) {
+          setXenditUrl(invData.invoiceUrl);
           try {
             await syncOrderToFirebase({
               ...order,
-              xenditInvoiceUrl: data.invoiceUrl,
-              xenditInvoiceId: data.invoiceId || `inv_${order.trackingCode}`,
+              xenditInvoiceUrl: invData.invoiceUrl,
+              xenditInvoiceId: invData.invoiceId || `inv_${order.trackingCode}`,
             });
           } catch { /* ignore */ }
         }
@@ -112,54 +98,37 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
 
     setIsXenditLoading(true);
     try {
-      const res = await fetch(apiUrl('/api/payment/xendit/invoice'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          trackingCode: order.trackingCode,
-          amount: order.totalCost,
-          companyName: order.companyName,
-          contactName: order.contactName,
-          contactPhone: order.contactPhone,
-          contactEmail: order.contactEmail,
-          frontendUrl: window.location.origin,
-        }),
+      const invData = await requestXenditInvoice({
+        trackingCode: order.trackingCode,
+        totalCost: order.totalCost,
+        companyName: order.companyName,
+        contactName: order.contactName,
+        contactPhone: order.contactPhone,
+        contactEmail: order.contactEmail,
       });
 
-      const data = await parseJsonResponse<{ invoiceUrl?: string; invoiceId?: string; isSimulated?: boolean; warningMessage?: string }>(res, 'Gagal memanggil gateway Xendit');
-
-      if (data.isSimulated) {
-        setIsSimulatedInvoice(true);
-        if (data.warningMessage) {
-          setXenditWarningMessage(data.warningMessage);
-        }
-        setShowXenditCheckoutModal(true);
-      }
-
-      // HANYA alihkan jika URL invoice valid dan resmi dari Xendit
-      if (data.invoiceUrl && !data.invoiceUrl.includes('?demo=true') && !data.isSimulated) {
-        setXenditUrl(data.invoiceUrl);
+      if (invData?.invoiceUrl) {
+        setXenditUrl(invData.invoiceUrl);
         try {
           await syncOrderToFirebase({
             ...order,
-            xenditInvoiceUrl: data.invoiceUrl,
-            xenditInvoiceId: data.invoiceId || `inv_${order.trackingCode}`,
+            xenditInvoiceUrl: invData.invoiceUrl,
+            xenditInvoiceId: invData.invoiceId || `inv_${order.trackingCode}`,
           });
         } catch { /* ignore */ }
 
         // Buka di tab baru (target _blank) untuk mencegah pemblokiran iframe/X-Frame-Options oleh browser
-        const popup = window.open(data.invoiceUrl, '_blank', 'noopener,noreferrer');
+        const popup = window.open(invData.invoiceUrl, '_blank', 'noopener,noreferrer');
         if (!popup || popup.closed || typeof popup.closed === 'undefined') {
           // Fallback jika diblokir popup blocker
           try {
-            window.location.href = data.invoiceUrl;
+            window.location.href = invData.invoiceUrl;
           } catch { /* ignore */ }
         }
         return;
       }
     } catch (err: any) {
-      console.warn('[PaymentView] Xendit notice:', err);
-      setShowXenditCheckoutModal(true);
+      console.warn('[PaymentView] Xendit error:', err);
     } finally {
       setIsXenditLoading(false);
     }
