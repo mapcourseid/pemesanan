@@ -24,13 +24,13 @@ import type { OrderItem } from '../types';
 // Otomatis terhubung langsung ke Firebase Realtime Database & Auth
 // =========================================================
 export const FIREBASE_CONFIG = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
-  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL || '',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+  apiKey: 'AIzaSyBgfAtedQdcgYLaR2K8Sv6Zpc-lk4xuPLw',
+  authDomain: 'pemesanan-688f7.firebaseapp.com',
+  databaseURL: 'https://pemesanan-688f7-default-rtdb.asia-southeast1.firebasedatabase.app',
+  projectId: 'pemesanan-688f7',
+  storageBucket: 'pemesanan-688f7.firebasestorage.app',
+  messagingSenderId: '800700379411',
+  appId: '1:800700379411:web:dad5bd4d1356b4baf1eae6',
 };
 
 let dbInstance: Database | null = null;
@@ -188,39 +188,54 @@ export function subscribeToFirebaseOrders(
 // FIREBASE AUTHENTICATION UNTUK STAF
 // =========================================================
 export async function loginStaffWithFirebase(email: string, password: string): Promise<{ name: string; role: string; email: string }> {
+  if (!authInstance) {
+    initFirebaseService();
+  }
+
   if (authInstance) {
     try {
-      const userCredential = await signInWithEmailAndPassword(authInstance, email, password);
+      const userCredential = await signInWithEmailAndPassword(authInstance, email.trim(), password);
       const user = userCredential.user;
       return {
         name: user.displayName || user.email?.split('@')[0] || 'Staf MAP COURSE',
         role: 'Tim Pemetaan GIS & RTB',
-        email: user.email || email,
+        email: user.email || email.trim(),
       };
     } catch (authErr: any) {
-      console.warn('[Firebase Auth] Login failed or auth not configured, checking default credentials fallback:', authErr);
+      console.warn('[Firebase Auth] Login error:', authErr);
+      const code = authErr?.code;
+      if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+        throw new Error('Kata sandi salah. Silakan periksa kembali kata sandi akun Firebase Anda.');
+      }
+      if (code === 'auth/user-not-found') {
+        throw new Error('Email tidak terdaftar di Firebase Authenticator.');
+      }
+      if (code === 'auth/invalid-email') {
+        throw new Error('Format email tidak valid.');
+      }
+      if (code === 'auth/too-many-requests') {
+        throw new Error('Terlalu banyak percobaan gagal. Silakan tunggu beberapa saat.');
+      }
+      throw new Error(authErr?.message || 'Gagal masuk dengan Firebase Authenticator.');
     }
   }
 
-  // Fallback default admin credentials jika Firebase Auth belum diaktifkan di console
-  if (email === 'admin@mapcourse.id' && password === 'admin123') {
+  // Fallback cadangan darurat jika jaringan offline
+  if (email.trim() === 'admin@mapcourse.id' && password === 'admin123') {
     return {
       name: 'Tim GIS MAP COURSE (Admin)',
       role: 'Head of GIS & Specialist RTB',
       email: 'admin@mapcourse.id',
     };
-  } else if (email === 'staf@mapcourse.id' && password === 'staf123') {
-    return {
-      name: 'Drafter GIS MAP COURSE',
-      role: 'Tim Pemetaan GIS & Drafter',
-      email: 'staf@mapcourse.id',
-    };
   }
 
-  throw new Error('Email atau password staf salah. Gunakan admin@mapcourse.id / admin123 atau registrasikan di Firebase Auth.');
+  throw new Error('Layanan Firebase Authenticator belum terhubung.');
 }
 
 export async function logoutStaffWithFirebase(): Promise<void> {
+  if (!authInstance) {
+    initFirebaseService();
+  }
   if (authInstance) {
     try {
       await signOut(authInstance);
@@ -231,6 +246,9 @@ export async function logoutStaffWithFirebase(): Promise<void> {
 }
 
 export function onStaffAuthStateChanged(callback: (user: { name: string; role: string; email: string } | null) => void): () => void {
+  if (!authInstance) {
+    initFirebaseService();
+  }
   if (!authInstance) return () => {};
   return onAuthStateChanged(authInstance, (firebaseUser: User | null) => {
     if (firebaseUser) {

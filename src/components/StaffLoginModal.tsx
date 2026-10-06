@@ -32,8 +32,8 @@ export const StaffLoginModal: React.FC<StaffLoginModalProps> = ({
       const user = await loginStaffWithFirebase(email.trim(), password);
       onLoginSuccess(user);
       onClose();
-    } catch {
-      setErrorMsg(STAFF_ERROR_MSG);
+    } catch (err: any) {
+      setErrorMsg(err?.message || STAFF_ERROR_MSG);
     } finally {
       setLoading(false);
     }
