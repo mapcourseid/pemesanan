@@ -432,42 +432,9 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
 
       onOrderCreated(createdOrder);
 
-      // 3. Buat tagihan resmi Xendit dan langsung alihkan peramban di tab yang sama
-      try {
-        const invResult = await requestXenditInvoice({
-          trackingCode: createdOrder.trackingCode,
-          totalCost: createdOrder.totalCost,
-          companyName: createdOrder.companyName,
-          contactName: createdOrder.contactName,
-          contactPhone: createdOrder.contactPhone,
-          contactEmail: createdOrder.contactEmail,
-        });
-
-        if (invResult?.invoiceUrl && !invResult.isSimulated) {
-          createdOrder.xenditInvoiceUrl = invResult.invoiceUrl;
-          createdOrder.xenditInvoiceId = invResult.invoiceId;
-
-          try {
-            const stored = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
-            const idx = stored.findIndex((o: any) => o.trackingCode === createdOrder.trackingCode);
-            if (idx !== -1) stored[idx] = createdOrder;
-            localStorage.setItem('mapcourse_local_orders', JSON.stringify(stored));
-            await syncOrderToFirebase(createdOrder);
-          } catch { /* ignore */ }
-
-          // Alihkan pengguna ke halaman checkout resmi Xendit di tab yang sama
-          window.location.href = invResult.invoiceUrl;
-          return;
-        } else {
-          // Fallback ke tab pembayaran internal di tab yang sama tanpa melempar ke halaman error Xendit
-          window.location.href = `${window.location.origin}/?tab=payment&code=${createdOrder.trackingCode}`;
-          return;
-        }
-      } catch (invErr) {
-        console.warn('[OrderForm] Xendit invoice creation notice:', invErr);
-        window.location.href = `${window.location.origin}/?tab=payment&code=${createdOrder.trackingCode}`;
-        return;
-      }
+      // Alihkan ke halaman pembayaran transfer Bank BNI & upload bukti bayar
+      window.location.href = `${window.location.origin}/?tab=payment&code=${createdOrder.trackingCode}`;
+      return;
     } else {
       setFormError('Terjadi kesalahan saat memproses data pesanan. Silakan periksa kelengkapan form.');
     }
@@ -1275,7 +1242,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
               disabled={isSubmitting}
               className="w-full py-4 px-4 bg-[#7d3feb] hover:bg-[#6f2cdb] active:scale-[0.99] text-white font-bold rounded-2xl shadow-lg shadow-purple-500/30 flex items-center justify-center gap-2 transition disabled:opacity-75 disabled:cursor-not-allowed"
             >
-              <span>{isSubmitting ? 'Menghubungkan ke Gateway Xendit...' : 'Ajukan Pesanan & Bayar via Xendit'}</span>
+              <span>{isSubmitting ? 'Memproses Pesanan...' : 'Ajukan Pesanan & Lanjutkan Pembayaran'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

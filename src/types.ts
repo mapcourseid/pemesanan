@@ -82,6 +82,12 @@ export interface OrderItem {
   xenditInvoiceId?: string;
   xenditInvoiceUrl?: string;
 
+  // Bukti Transfer Bank BNI (Manual Transfer & Upload)
+  paymentProofUrl?: string;
+  paymentProofName?: string;
+  paymentProofUploadedAt?: string;
+  paymentProofStatus?: 'WAITING_VERIFICATION' | 'VERIFIED' | 'REJECTED';
+
   // Tim GIS & Drafter Output Files
   gisResultFiles?: {
     zipShpUrl?: string;

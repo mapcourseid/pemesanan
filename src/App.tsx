@@ -116,7 +116,16 @@ export function App() {
       } catch { /* ignore */ }
     }
 
-    // Selalu cek status terbaru langsung dari server Xendit
+    if (!order) {
+      try {
+        const res = await fetch(apiUrl(`/api/orders/${trackingCode}`));
+        if (res.ok) {
+          order = await res.json();
+        }
+      } catch { /* ignore */ }
+    }
+
+    // Cek status terbaru jika ada invoice terbitan sebelumnya
     try {
       const xenditInv = await fetchXenditInvoiceByCode(trackingCode);
       if (xenditInv) {

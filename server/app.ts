@@ -553,6 +553,53 @@ app.post('/api/orders/:code/discount', (req, res) => {
   res.json({ success: true, order });
 });
 
+// Upload proof of payment endpoint (Customer BNI Transfer)
+app.post('/api/orders/:code/payment-proof', (req, res) => {
+  const code = req.params.code.trim().toUpperCase();
+  const order = orders.find((o) => o.trackingCode.toUpperCase() === code);
+  if (!order) {
+    return res.status(404).json({ error: 'Pesanan tidak ditemukan' });
+  }
+
+  const { paymentProofUrl, paymentProofName } = req.body;
+  if (!paymentProofUrl) {
+    return res.status(400).json({ error: 'Data bukti pembayaran wajib disertakan' });
+  }
+
+  order.paymentProofUrl = paymentProofUrl;
+  order.paymentProofName = paymentProofName || 'Bukti_Transfer_BNI.jpg';
+  order.paymentProofUploadedAt = new Date().toISOString();
+  order.paymentProofStatus = 'WAITING_VERIFICATION';
+
+  broadcastUpdate('order_updated', order);
+  res.json({ success: true, order });
+});
+
+// Staff manual payment verification endpoint
+app.post('/api/orders/:code/verify-payment', (req, res) => {
+  const code = req.params.code.trim().toUpperCase();
+  const order = orders.find((o) => o.trackingCode.toUpperCase() === code);
+  if (!order) {
+    return res.status(404).json({ error: 'Pesanan tidak ditemukan' });
+  }
+
+  const { paymentMethod = 'Transfer Bank BNI (Terverifikasi Staf)' } = req.body;
+  const now = new Date();
+  const invoiceNumber = `INV/${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}/${order.trackingCode.slice(-7)}`;
+
+  order.paymentStatus = 'PAID';
+  order.paidAt = now.toISOString();
+  order.paymentMethod = paymentMethod;
+  order.invoiceNumber = order.invoiceNumber || invoiceNumber;
+  order.paymentProofStatus = 'VERIFIED';
+  if (order.status === 'Menunggu Pembayaran') {
+    order.status = 'Verifikasi Berkas';
+  }
+
+  broadcastUpdate('order_updated', order);
+  res.json({ success: true, order });
+});
+
 // Update / Edit order project endpoint (Staff Dashboard)
 app.put('/api/orders/:code', (req, res) => {
   const code = req.params.code.trim().toUpperCase();

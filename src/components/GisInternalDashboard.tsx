@@ -30,8 +30,12 @@ import {
   Mail,
   Phone,
   Shield,
-  Compass
+  Compass,
+  UploadCloud,
+  Eye,
+  Image as ImageIcon,
 } from 'lucide-react';
+import confetti from 'canvas-confetti';
 import type { OrderItem, OrderStatus } from '../types';
 import { formatRupiah, AVAILABLE_COUPONS } from '../utils/pricing';
 import { WhatsAppPreviewModal } from './WhatsAppPreviewModal';
@@ -95,6 +99,10 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
   // Edit & Delete Modals (Requirement 4)
   const [editingOrder, setEditingOrder] = useState<OrderItem | null>(null);
   const [deletingOrder, setDeletingOrder] = useState<OrderItem | null>(null);
+
+  // Proof of Payment Modal State
+  const [proofModalUrl, setProofModalUrl] = useState<string | null>(null);
+  const [proofModalName, setProofModalName] = useState<string>('');
 
   // Filters
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
@@ -240,6 +248,40 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
       console.warn('LocalStorage save notice:', e);
     }
     syncOrderToFirebase(updated);
+  };
+
+  // Staff Payment Verification for BNI Transfer
+  const handleVerifyStaffPayment = async (orderToVerify: OrderItem) => {
+    const now = new Date();
+    const invoiceNumber = `INV/${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}/${orderToVerify.trackingCode.slice(-7)}`;
+    const updated: OrderItem = {
+      ...orderToVerify,
+      paymentStatus: 'PAID',
+      status: orderToVerify.status === 'Menunggu Pembayaran' ? 'Verifikasi Berkas' : orderToVerify.status,
+      paidAt: now.toISOString(),
+      paymentMethod: 'Transfer Bank BNI (Terverifikasi Staf)',
+      invoiceNumber: orderToVerify.invoiceNumber || invoiceNumber,
+      paymentProofStatus: 'VERIFIED',
+    };
+
+    persistOrderLocallyAndCloud(updated);
+
+    try {
+      await fetch(apiUrl(`/api/orders/${orderToVerify.trackingCode}/verify-payment`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentMethod: 'Transfer Bank BNI (Terverifikasi Staf)',
+        }),
+      });
+    } catch { /* ignore */ }
+
+    confetti({
+      particleCount: 100,
+      spread: 70,
+      origin: { y: 0.6 },
+    });
+    showToast(`Pembayaran pesanan ${orderToVerify.trackingCode} BERHASIL diverifikasi! E-Invoice telah diterbitkan.`, 'success');
   };
 
   // Update Status
@@ -811,6 +853,12 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
                         <span className="font-mono font-bold text-[#7d3feb] bg-purple-100 px-2 py-0.5 rounded text-[11px]">
                           {ord.queueNumber}
                         </span>
+                        {ord.paymentProofUrl && ord.paymentStatus !== 'PAID' && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500 text-white flex items-center gap-1 animate-pulse">
+                            <UploadCloud className="w-2.5 h-2.5" />
+                            Bukti Masuk
+                          </span>
+                        )}
                       </div>
 
                       <div>
@@ -1002,6 +1050,109 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Card Bukti Pembayaran Transfer Bank BNI (Jika Ada Bukti / Menunggu Verifikasi) */}
+              {selectedOrder.paymentProofUrl ? (
+                <div className="p-5 bg-orange-50/50 rounded-2xl border border-orange-200 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center font-bold">
+                        <ImageIcon className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-slate-900 text-xs sm:text-sm">
+                          Bukti Pembayaran Pelanggan (Transfer BNI 178-619-5190)
+                        </h4>
+                        <p className="text-[11px] text-slate-500">
+                          Diunggah: {selectedOrder.paymentProofUploadedAt ? new Date(selectedOrder.paymentProofUploadedAt).toLocaleString('id-ID') : 'Baru saja'} • {selectedOrder.paymentProofName || 'Bukti_Transfer.jpg'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProofModalUrl(selectedOrder.paymentProofUrl || null);
+                          setProofModalName(selectedOrder.paymentProofName || 'Bukti Transfer');
+                        }}
+                        className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 shadow-sm flex items-center gap-1.5 transition"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-[#7d3feb]" />
+                        <span>Buka / Perbesar Bukti</span>
+                      </button>
+
+                      {selectedOrder.paymentStatus !== 'PAID' && (
+                        <button
+                          type="button"
+                          onClick={() => handleVerifyStaffPayment(selectedOrder)}
+                          className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow flex items-center gap-1.5 transition"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Verifikasi &amp; Tandai Lunas</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Thumbnail Preview */}
+                  <div className="p-2.5 bg-white rounded-xl border border-orange-200/70 flex items-center gap-4">
+                    {selectedOrder.paymentProofUrl.startsWith('data:image') ||
+                    selectedOrder.paymentProofUrl.match(/\.(jpeg|jpg|gif|png|webp)/i) ? (
+                      <img
+                        src={selectedOrder.paymentProofUrl}
+                        alt="Bukti Transfer Pelanggan"
+                        onClick={() => {
+                          setProofModalUrl(selectedOrder.paymentProofUrl || null);
+                          setProofModalName(selectedOrder.paymentProofName || 'Bukti Transfer');
+                        }}
+                        className="h-20 w-28 object-cover rounded-lg border border-slate-200 cursor-pointer hover:opacity-90 transition shrink-0"
+                      />
+                    ) : (
+                      <div className="h-20 w-28 bg-purple-50 text-[#7d3feb] rounded-lg border border-purple-200 flex flex-col items-center justify-center text-[10px] font-bold p-1 shrink-0">
+                        <FileText className="w-6 h-6 mb-1" />
+                        <span>Dokumen / PDF</span>
+                      </div>
+                    )}
+                    <div className="text-xs text-slate-600 space-y-1">
+                      <div className="font-semibold text-slate-800">
+                        Nominal Transfer: <strong className="text-emerald-700">{formatRupiah(selectedOrder.totalCost)}</strong>
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        {selectedOrder.paymentStatus === 'PAID' ? (
+                          <span className="text-emerald-700 font-bold flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Pembayaran telah diverifikasi resmi oleh tim staf.
+                          </span>
+                        ) : (
+                          <span className="text-amber-800 font-medium">
+                            Menunggu verifikasi staf. Klik tombol &quot;Verifikasi &amp; Tandai Lunas&quot; setelah mencocokkan mutasi rekening BNI.
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : selectedOrder.paymentStatus !== 'PAID' ? (
+                <div className="p-4 bg-amber-50/50 rounded-2xl border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                    <div>
+                      <span className="font-bold text-amber-950">Pelanggan Belum Mengunggah Bukti Transfer</span>
+                      <p className="text-[11px] text-amber-800 mt-0.5">
+                        Instruksi transfer BNI 178-619-5190 an PT Map Course Indonesia telah ditampilkan di halaman pelanggan.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleVerifyStaffPayment(selectedOrder)}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-[11px] font-bold rounded-xl shadow shrink-0 flex items-center gap-1 self-start sm:self-auto"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Tandai Lunas Manual</span>
+                  </button>
+                </div>
+              ) : null}
 
               {/* Requirement 6: Timeline Pengerjaan & Estimasi Selesai */}
               <div className="p-4 bg-purple-50/50 rounded-2xl border border-purple-200 space-y-2">
@@ -1647,6 +1798,59 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
           </div>
         </div>
       )}
+      {/* Modal Preview Bukti Pembayaran Penuh */}
+      {proofModalUrl && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <div className="flex items-center gap-2">
+                <ImageIcon className="w-5 h-5 text-[#7d3feb]" />
+                <h3 className="font-bold text-slate-900 text-sm">
+                  Pratinjau Bukti Transfer ({proofModalName})
+                </h3>
+              </div>
+              <button
+                onClick={() => setProofModalUrl(null)}
+                className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-500 hover:text-slate-800 transition"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="max-h-[70vh] overflow-auto rounded-2xl bg-slate-50 p-2 flex items-center justify-center border border-slate-200">
+              {proofModalUrl.startsWith('data:image') || proofModalUrl.match(/\.(jpeg|jpg|gif|png|webp)/i) ? (
+                <img
+                  src={proofModalUrl}
+                  alt="Bukti Transfer Penuh"
+                  className="max-h-[60vh] w-auto object-contain rounded-xl shadow-sm"
+                />
+              ) : (
+                <div className="p-12 text-center space-y-3">
+                  <FileText className="w-12 h-12 text-[#7d3feb] mx-auto" />
+                  <p className="text-xs font-semibold text-slate-700">Dokumen Bukti Transfer</p>
+                  <a
+                    href={proofModalUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#7d3feb] text-white text-xs font-bold rounded-xl shadow"
+                  >
+                    <span>Buka / Unduh Berkas</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setProofModalUrl(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toast Notification Container */}
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 max-w-md bg-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-2xl flex items-center justify-between gap-4 border border-slate-700 animate-in fade-in slide-in-from-bottom-4 duration-300">
