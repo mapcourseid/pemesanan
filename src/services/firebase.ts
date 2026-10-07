@@ -18,19 +18,20 @@ import {
   type User,
 } from 'firebase/auth';
 import type { OrderItem } from '../types';
+import type { PromoCoupon } from '../utils/pricing';
 
 // =========================================================
 // KONFIGURASI FIREBASE RESMI MAP COURSE
 // Otomatis terhubung langsung ke Firebase Realtime Database & Auth
 // =========================================================
 export const FIREBASE_CONFIG = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
-  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL || '',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+  apiKey: 'AIzaSyBgfAtedQdcgYLaR2K8Sv6Zpc-lk4xuPLw',
+  authDomain: 'pemesanan-688f7.firebaseapp.com',
+  databaseURL: 'https://pemesanan-688f7-default-rtdb.asia-southeast1.firebasedatabase.app',
+  projectId: 'pemesanan-688f7',
+  storageBucket: 'pemesanan-688f7.firebasestorage.app',
+  messagingSenderId: '800700379411',
+  appId: '1:800700379411:web:dad5bd4d1356b4baf1eae6',
 };
 
 let dbInstance: Database | null = null;
@@ -70,43 +71,79 @@ export function initFirebaseService(): boolean {
 }
 
 export async function syncOrderToFirebase(order: OrderItem): Promise<boolean> {
-  if (!dbInstance) return false;
-  try {
-    const orderRef = ref(dbInstance, `mapcourse/orders/${order.trackingCode.toUpperCase()}`);
-    await set(orderRef, order);
-    console.log(`[Firebase] Order ${order.trackingCode} tersinkronisasi ke cloud!`);
-    return true;
-  } catch (err) {
-    console.warn('[Firebase] Sync notice:', err);
-    return false;
+  const cleanCode = order.trackingCode.trim().toUpperCase();
+
+  // 1. Coba lewat Firebase SDK
+  if (dbInstance) {
+    try {
+      const orderRef = ref(dbInstance, `mapcourse/orders/${cleanCode}`);
+      await set(orderRef, order);
+      console.log(`[Firebase] Order ${cleanCode} tersinkronisasi via SDK!`);
+      return true;
+    } catch (err) {
+      console.warn('[Firebase SDK] Sync notice:', err);
+    }
   }
+
+  // 2. Fallback via Firebase Realtime Database REST API
+  try {
+    const res = await fetch(`https://pemesanan-688f7-default-rtdb.asia-southeast1.firebasedatabase.app/mapcourse/orders/${cleanCode}.json`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(order),
+    });
+    if (res.ok) {
+      console.log(`[Firebase REST] Order ${cleanCode} tersinkronisasi via REST!`);
+      return true;
+    }
+  } catch (restErr) {
+    console.warn('[Firebase REST] Sync notice:', restErr);
+  }
+
+  return false;
 }
 
 export async function fetchSingleOrderFromFirebase(trackingCode: string): Promise<OrderItem | null> {
-  if (!dbInstance || !trackingCode) return null;
-  try {
-    const cleanCode = trackingCode.trim().toUpperCase();
-    const orderRef = ref(dbInstance, `mapcourse/orders/${cleanCode}`);
-    const snapshot = await get(orderRef);
-    if (snapshot.exists()) {
-      return snapshot.val() as OrderItem;
+  if (!trackingCode) return null;
+  const cleanCode = trackingCode.trim().toUpperCase();
+
+  // 1. Coba lewat Firebase SDK jika terhubung
+  if (dbInstance) {
+    try {
+      const orderRef = ref(dbInstance, `mapcourse/orders/${cleanCode}`);
+      const snapshot = await get(orderRef);
+      if (snapshot.exists()) {
+        return snapshot.val() as OrderItem;
+      }
+      
+      const allRef = ref(dbInstance, 'mapcourse/orders');
+      const allSnap = await get(allRef);
+      if (allSnap.exists()) {
+        const allData = allSnap.val();
+        const found = Object.values(allData).find(
+          (o: any) => o?.trackingCode?.toUpperCase() === cleanCode
+        ) as OrderItem | undefined;
+        if (found) return found;
+      }
+    } catch (err) {
+      console.warn('[Firebase SDK] Fetch single order notice:', err);
     }
-    
-    // Fallback: search all orders if key mismatch
-    const allRef = ref(dbInstance, 'mapcourse/orders');
-    const allSnap = await get(allRef);
-    if (allSnap.exists()) {
-      const allData = allSnap.val();
-      const found = Object.values(allData).find(
-        (o: any) => o?.trackingCode?.toUpperCase() === cleanCode
-      ) as OrderItem | undefined;
-      return found || null;
-    }
-    return null;
-  } catch (err) {
-    console.warn('[Firebase] Fetch single order notice:', err);
-    return null;
   }
+
+  // 2. Fallback lewat Firebase REST API
+  try {
+    const res = await fetch(`https://pemesanan-688f7-default-rtdb.asia-southeast1.firebasedatabase.app/mapcourse/orders/${cleanCode}.json`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.trackingCode) {
+        return data as OrderItem;
+      }
+    }
+  } catch (restErr) {
+    console.warn('[Firebase REST] Fetch order notice:', restErr);
+  }
+
+  return null;
 }
 
 export async function deleteOrderFromFirebase(trackingCode: string): Promise<boolean> {
@@ -149,42 +186,145 @@ export function subscribeToFirebaseOrders(
 }
 
 // =========================================================
+// MANAJEMEN DISKON & KUPON PROMO FIREBASE
+// =========================================================
+export async function syncDiscountToFirebase(coupon: PromoCoupon): Promise<boolean> {
+  const cleanCode = coupon.code.trim().toUpperCase();
+  const cleanCoupon: PromoCoupon = {
+    ...coupon,
+    code: cleanCode,
+    isActive: coupon.isActive ?? true,
+    createdAt: coupon.createdAt || new Date().toISOString(),
+  };
+
+  if (dbInstance) {
+    try {
+      const discountRef = ref(dbInstance, `mapcourse/discounts/${cleanCode}`);
+      await set(discountRef, cleanCoupon);
+      console.log(`[Firebase] Diskon ${cleanCode} tersinkronisasi via SDK!`);
+      return true;
+    } catch (sdkErr) {
+      console.warn('[Firebase SDK] Sync discount notice:', sdkErr);
+    }
+  }
+
+  // REST fallback
+  try {
+    const url = `https://pemesanan-688f7-default-rtdb.asia-southeast1.firebasedatabase.app/mapcourse/discounts/${cleanCode}.json`;
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cleanCoupon),
+    });
+    if (res.ok) {
+      console.log(`[Firebase REST] Diskon ${cleanCode} tersinkronisasi via REST!`);
+      return true;
+    }
+  } catch (restErr) {
+    console.warn('[Firebase REST] Sync discount notice:', restErr);
+  }
+
+  return false;
+}
+
+export async function deleteDiscountFromFirebase(code: string): Promise<boolean> {
+  const cleanCode = code.trim().toUpperCase();
+  if (dbInstance) {
+    try {
+      const discountRef = ref(dbInstance, `mapcourse/discounts/${cleanCode}`);
+      await remove(discountRef);
+      console.log(`[Firebase] Diskon ${cleanCode} berhasil dihapus dari cloud!`);
+      return true;
+    } catch (err) {
+      console.warn('[Firebase] Delete discount notice:', err);
+    }
+  }
+
+  try {
+    const url = `https://pemesanan-688f7-default-rtdb.asia-southeast1.firebasedatabase.app/mapcourse/discounts/${cleanCode}.json`;
+    const res = await fetch(url, { method: 'DELETE' });
+    if (res.ok) return true;
+  } catch (restErr) {
+    console.warn('[Firebase REST] Delete discount notice:', restErr);
+  }
+
+  return false;
+}
+
+export function subscribeToFirebaseDiscounts(
+  onData: (coupons: PromoCoupon[]) => void
+): () => void {
+  if (!dbInstance) return () => {};
+  try {
+    const discountsRef = ref(dbInstance, 'mapcourse/discounts');
+    const callback = onValue(discountsRef, (snapshot) => {
+      const val = snapshot.val();
+      if (val) {
+        const list = Object.values(val) as PromoCoupon[];
+        onData(list);
+      } else {
+        onData([]);
+      }
+    });
+    return () => off(discountsRef, 'value', callback);
+  } catch (err) {
+    console.warn('[Firebase] Subscription discounts notice:', err);
+    return () => {};
+  }
+}
+
+// =========================================================
 // FIREBASE AUTHENTICATION UNTUK STAF
 // =========================================================
 export async function loginStaffWithFirebase(email: string, password: string): Promise<{ name: string; role: string; email: string }> {
+  if (!authInstance) {
+    initFirebaseService();
+  }
+
   if (authInstance) {
     try {
-      const userCredential = await signInWithEmailAndPassword(authInstance, email, password);
+      const userCredential = await signInWithEmailAndPassword(authInstance, email.trim(), password);
       const user = userCredential.user;
       return {
         name: user.displayName || user.email?.split('@')[0] || 'Staf MAP COURSE',
         role: 'Tim Pemetaan GIS & RTB',
-        email: user.email || email,
+        email: user.email || email.trim(),
       };
     } catch (authErr: any) {
-      console.warn('[Firebase Auth] Login failed or auth not configured, checking default credentials fallback:', authErr);
+      console.warn('[Firebase Auth] Login error:', authErr);
+      const code = authErr?.code;
+      if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+        throw new Error('Kata sandi salah. Silakan periksa kembali kata sandi akun Firebase Anda.');
+      }
+      if (code === 'auth/user-not-found') {
+        throw new Error('Email tidak terdaftar di Firebase Authenticator.');
+      }
+      if (code === 'auth/invalid-email') {
+        throw new Error('Format email tidak valid.');
+      }
+      if (code === 'auth/too-many-requests') {
+        throw new Error('Terlalu banyak percobaan gagal. Silakan tunggu beberapa saat.');
+      }
+      throw new Error(authErr?.message || 'Gagal masuk dengan Firebase Authenticator.');
     }
   }
 
-  // Fallback default admin credentials jika Firebase Auth belum diaktifkan di console
-  if (email === 'admin@mapcourse.id' && password === 'admin123') {
+  // Fallback cadangan darurat jika jaringan offline
+  if (email.trim() === 'admin@mapcourse.id' && password === 'admin123') {
     return {
       name: 'Tim GIS MAP COURSE (Admin)',
       role: 'Head of GIS & Specialist RTB',
       email: 'admin@mapcourse.id',
     };
-  } else if (email === 'staf@mapcourse.id' && password === 'staf123') {
-    return {
-      name: 'Drafter GIS MAP COURSE',
-      role: 'Tim Pemetaan GIS & Drafter',
-      email: 'staf@mapcourse.id',
-    };
   }
 
-  throw new Error('Email atau password staf salah. Gunakan admin@mapcourse.id / admin123 atau registrasikan di Firebase Auth.');
+  throw new Error('Layanan Firebase Authenticator belum terhubung.');
 }
 
 export async function logoutStaffWithFirebase(): Promise<void> {
+  if (!authInstance) {
+    initFirebaseService();
+  }
   if (authInstance) {
     try {
       await signOut(authInstance);
@@ -195,6 +335,9 @@ export async function logoutStaffWithFirebase(): Promise<void> {
 }
 
 export function onStaffAuthStateChanged(callback: (user: { name: string; role: string; email: string } | null) => void): () => void {
+  if (!authInstance) {
+    initFirebaseService();
+  }
   if (!authInstance) return () => {};
   return onAuthStateChanged(authInstance, (firebaseUser: User | null) => {
     if (firebaseUser) {

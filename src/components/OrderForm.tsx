@@ -11,18 +11,19 @@ import {
   CheckCircle2,
   Tag,
   Check,
-  Flame
+  AlertTriangle
 } from 'lucide-react';
 import { LeafletMapPreview } from './LeafletMapPreview';
 import { 
   calculateOrderPrice, 
   formatRupiah, 
-  AVAILABLE_COUPONS 
+  findActiveCoupon 
 } from '../utils/pricing';
 import type { AssessmentFactorInput } from '../utils/pricing';
 import type { OrderItem } from '../types';
 import { apiUrl, parseJsonResponse } from '../utils/api';
-import { syncOrderToFirebase } from '../services/firebase';
+import { syncOrderToFirebase, subscribeToFirebaseDiscounts } from '../services/firebase';
+import { requestXenditInvoice } from '../services/xenditClient';
 import shp from 'shpjs';
 
 interface OrderFormProps {
@@ -88,6 +89,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
   const [couponInput, setCouponInput] = useState<string>('');
   const [appliedCouponCode, setAppliedCouponCode] = useState<string>('');
   const [couponError, setCouponError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -125,6 +127,22 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
     }
   }, [presetData]);
 
+  // Subscribe ke pembaruan kupon diskon dari Firebase
+  useEffect(() => {
+    const unsub = subscribeToFirebaseDiscounts((coupons) => {
+      if (coupons && coupons.length > 0) {
+        try {
+          const custom: Record<string, any> = {};
+          coupons.forEach((c) => {
+            if (c && c.code) custom[c.code.toUpperCase()] = c;
+          });
+          localStorage.setItem('mapcourse_custom_discounts', JSON.stringify(custom));
+        } catch { /* ignore */ }
+      }
+    });
+    return () => unsub();
+  }, []);
+
   // Compute live calculation
   const pricingResult = calculateOrderPrice(actualAreaM2, factors, appliedCouponCode);
 
@@ -135,11 +153,44 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
       setAppliedCouponCode('');
       return;
     }
-    if (AVAILABLE_COUPONS[clean]) {
+    const coupon = findActiveCoupon(clean);
+    if (coupon) {
+      if (coupon.minAreaM2 && actualAreaM2 < coupon.minAreaM2) {
+        setCouponError(`Kupon ini hanya berlaku untuk luas lahan minimal ${coupon.minAreaM2.toLocaleString('id-ID')} m²`);
+        return;
+      }
       setAppliedCouponCode(clean);
     } else {
-      setCouponError('Kode voucher tidak valid atau sudah kedaluwarsa.');
+      setCouponError('Kode kupon tidak valid atau sudah tidak aktif.');
     }
+  };
+
+  const handleFillDemoData = () => {
+    setCompanyName('PT Maju Peta Nusantara');
+    setContactName('Budi Santoso, S.T.');
+    setContactPhone('081234567890');
+    setContactEmail('budi.santoso@majupeta.co.id');
+    setKbliCode('68111');
+    setKbliName('Real Estat yang Dimiliki Sendiri atau Disewa');
+    setAreaInput(5000);
+    setAreaUnit('m2');
+    setLandOwnershipStatus('Sudah Menguasai');
+    setLandOwnershipType('SHGB');
+    setStreetAddress('Jl. Raya Soekarno Hatta No. 450');
+    setProvince('Jawa Barat');
+    setCity('Kota Bandung');
+    setDistrict('Batununggal');
+    setVillage('Kujangsari');
+    setPostalCode('40287');
+    setBuildingCount(4);
+    setBuildingFloors(2);
+    setBuildingHeightMeters(8);
+    setImbStatus('Dalam Proses');
+    setCoordinates({ lat: -6.9389, lng: 107.6364 });
+    setHasPolygon(true);
+    setCouponInput('MAPPROMO50');
+    setAppliedCouponCode('MAPPROMO50');
+    setFormError(null);
   };
 
   // File upload for Land Ownership Document
@@ -148,9 +199,10 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
     if (!file) return;
 
     if (file.size > 5 * 1024 * 1024) {
-      alert('Ukuran file melebihi 5MB! Silakan pilih file dokumen lain.');
+      setFormError('Ukuran file melebihi 5MB! Silakan pilih file dokumen lain.');
       return;
     }
+    setFormError(null);
 
     setLandDocumentFile(file);
     setIsUploadingDoc(true);
@@ -343,9 +395,9 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
 
     let createdOrder: OrderItem = newOrderData;
 
-    // Coba kirim juga ke backend jika backend aktif (opsional)
+    // Kirim pesanan ke backend API
     const backendUrl = apiUrl('/api/orders');
-    if (backendUrl && !backendUrl.startsWith('/api')) {
+    if (backendUrl) {
       try {
         const res = await fetch(backendUrl, {
           method: 'POST',
@@ -357,7 +409,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
           createdOrder = data;
         }
       } catch (err) {
-        console.info('[OrderForm] Berjalan dalam mode Firebase Standalone.');
+        console.info('[OrderForm] Backend offline atau menggunakan fallback client.');
       }
     }
 
@@ -379,8 +431,45 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
       }
 
       onOrderCreated(createdOrder);
+
+      // 3. Buat tagihan resmi Xendit dan langsung alihkan peramban di tab yang sama
+      try {
+        const invResult = await requestXenditInvoice({
+          trackingCode: createdOrder.trackingCode,
+          totalCost: createdOrder.totalCost,
+          companyName: createdOrder.companyName,
+          contactName: createdOrder.contactName,
+          contactPhone: createdOrder.contactPhone,
+          contactEmail: createdOrder.contactEmail,
+        });
+
+        if (invResult?.invoiceUrl && !invResult.isSimulated) {
+          createdOrder.xenditInvoiceUrl = invResult.invoiceUrl;
+          createdOrder.xenditInvoiceId = invResult.invoiceId;
+
+          try {
+            const stored = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
+            const idx = stored.findIndex((o: any) => o.trackingCode === createdOrder.trackingCode);
+            if (idx !== -1) stored[idx] = createdOrder;
+            localStorage.setItem('mapcourse_local_orders', JSON.stringify(stored));
+            await syncOrderToFirebase(createdOrder);
+          } catch { /* ignore */ }
+
+          // Alihkan pengguna ke halaman checkout resmi Xendit di tab yang sama
+          window.location.href = invResult.invoiceUrl;
+          return;
+        } else {
+          // Fallback ke tab pembayaran internal di tab yang sama tanpa melempar ke halaman error Xendit
+          window.location.href = `${window.location.origin}/?tab=payment&code=${createdOrder.trackingCode}`;
+          return;
+        }
+      } catch (invErr) {
+        console.warn('[OrderForm] Xendit invoice creation notice:', invErr);
+        window.location.href = `${window.location.origin}/?tab=payment&code=${createdOrder.trackingCode}`;
+        return;
+      }
     } else {
-      alert('Terjadi kesalahan saat memproses data pesanan. Silakan periksa kelengkapan form.');
+      setFormError('Terjadi kesalahan saat memproses data pesanan. Silakan periksa kelengkapan form.');
     }
 
     setIsSubmitting(false);
@@ -404,6 +493,22 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
           </p>
         </div>
       </div>
+
+      {formError && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-2xl flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0" />
+            <p className="text-sm font-medium">{formError}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFormError(null)}
+            className="text-rose-400 hover:text-rose-700 font-bold text-lg px-2"
+          >
+            &times;
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column: Form Fields */}
@@ -1111,7 +1216,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
                   type="text"
                   value={couponInput}
                   onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
-                  placeholder="KODE: PROMOATR / DISKON10"
+                  placeholder="Masukkan kode kupon"
                   className="flex-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold uppercase focus:ring-2 focus:ring-[#7d3feb]"
                 />
                 <button

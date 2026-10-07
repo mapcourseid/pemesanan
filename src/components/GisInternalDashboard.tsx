@@ -23,13 +23,48 @@ import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
-  CheckCircle2
+  CheckCircle2,
+  CreditCard,
+  Building2,
+  MapPin,
+  Mail,
+  Phone,
+  Shield,
+  Compass
 } from 'lucide-react';
 import type { OrderItem, OrderStatus } from '../types';
 import { formatRupiah, AVAILABLE_COUPONS } from '../utils/pricing';
 import { WhatsAppPreviewModal } from './WhatsAppPreviewModal';
+import { DiscountManager } from './DiscountManager';
 import { syncOrderToFirebase, subscribeToFirebaseOrders, deleteOrderFromFirebase } from '../services/firebase';
 import { apiUrl, fileUrl, parseJsonResponse } from '../utils/api';
+
+const formatProjectDate = (isoString?: string) => {
+  if (!isoString) return '-';
+  try {
+    return new Date(isoString).toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+  } catch {
+    return isoString;
+  }
+};
+
+const formatPaymentDate = (isoString?: string) => {
+  if (!isoString) return null;
+  try {
+    const d = new Date(isoString);
+    return `${d.toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    })} • ${d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB`;
+  } catch {
+    return isoString;
+  }
+};
 
 const STATUS_OPTIONS: OrderStatus[] = [
   'Menunggu Pembayaran',
@@ -53,8 +88,8 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
   const [stats, setStats] = useState<any>(null);
   const [selectedOrder, setSelectedOrder] = useState<OrderItem | null>(null);
 
-  // View Mode: 'LIST' or 'CALENDAR' (Requirement 6)
-  const [viewMode, setViewMode] = useState<'LIST' | 'CALENDAR'>('LIST');
+  // View Mode: 'LIST' | 'CALENDAR' | 'DISCOUNTS'
+  const [viewMode, setViewMode] = useState<'LIST' | 'CALENDAR' | 'DISCOUNTS'>('LIST');
   const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
 
   // Edit & Delete Modals (Requirement 4)
@@ -83,6 +118,16 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
   // Discount Manager State
   const [manualDiscountAmount, setManualDiscountAmount] = useState<number>(0);
   const [applyingDiscount, setApplyingDiscount] = useState(false);
+
+  // Toast Notification State (replaces window.alert for iframe compatibility)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast((curr) => (curr?.message === message ? null : curr));
+    }, 4000);
+  };
 
   const mergeOrders = (incoming: OrderItem[]) => {
     if (!Array.isArray(incoming) || incoming.length === 0) return;
@@ -274,10 +319,10 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
       if (data.order) {
         persistOrderLocallyAndCloud(data.order);
       }
-      alert('Berkas hasil pengerjaan GIS & RTB berhasil diperbarui dan disinkronkan!');
+      showToast('Berkas hasil pengerjaan GIS & RTB berhasil diperbarui dan disinkronkan!', 'success');
     } catch (err: any) {
       console.warn('Backend upload deliverables notice (persisted via Cloud & Local):', err);
-      alert('Berkas hasil pengerjaan GIS & RTB berhasil disimpan dan disinkronkan ke Cloud Firebase!');
+      showToast('Berkas hasil pengerjaan GIS & RTB berhasil disimpan dan disinkronkan ke Cloud Firebase!', 'success');
     } finally {
       setUploadingGis(false);
     }
@@ -307,10 +352,10 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
       if (data.order) {
         persistOrderLocallyAndCloud(data.order);
       }
-      alert(`Diskon sebesar ${formatRupiah(manualDiscountAmount)} berhasil diterapkan!`);
+      showToast(`Diskon sebesar ${formatRupiah(manualDiscountAmount)} berhasil diterapkan!`, 'success');
     } catch (err: any) {
       console.warn('Backend discount returned notice (applied via Cloud & Local):', err);
-      alert(`Diskon sebesar ${formatRupiah(manualDiscountAmount)} berhasil diterapkan (tersinkron ke Cloud & Lokal)!`);
+      showToast(`Diskon sebesar ${formatRupiah(manualDiscountAmount)} berhasil diterapkan!`, 'success');
     } finally {
       setApplyingDiscount(false);
     }
@@ -349,7 +394,7 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
   const handleDownloadCustomerPolygon = (geoJsonData: any, trackingCode: string) => {
     try {
       if (!geoJsonData) {
-        alert('Data geometri polygon tidak ditemukan.');
+        showToast('Data geometri polygon tidak ditemukan.', 'error');
         return;
       }
       const jsonStr = typeof geoJsonData === 'string' ? geoJsonData : JSON.stringify(geoJsonData, null, 2);
@@ -363,7 +408,7 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 500);
     } catch (e: any) {
-      alert(`Gagal mengunduh file polygon: ${e.message}`);
+      showToast(`Gagal mengunduh file polygon: ${e.message}`, 'error');
     }
   };
 
@@ -382,10 +427,10 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated),
       });
-      alert(`Data proyek ${updated.companyName} (${updated.trackingCode}) berhasil diperbarui!`);
+      showToast(`Data proyek ${updated.companyName} (${updated.trackingCode}) berhasil diperbarui!`, 'success');
     } catch (err: any) {
       console.warn('Backend edit project notice:', err);
-      alert(`Data proyek ${updated.companyName} berhasil diperbarui (tersinkron ke Cloud & Lokal)!`);
+      showToast(`Data proyek ${updated.companyName} berhasil diperbarui!`, 'success');
     }
   };
 
@@ -413,7 +458,7 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
       await fetch(apiUrl(`/api/orders/${code}`), { method: 'DELETE' });
     } catch (e) {}
 
-    alert(`Proyek ${orderToDelete.companyName} (${code}) berhasil dihapus.`);
+    showToast(`Proyek ${orderToDelete.companyName} (${code}) berhasil dihapus.`, 'info');
   };
 
   // Requirement 6: Timeline dates updater
@@ -663,7 +708,7 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
           <span className="text-xs font-bold text-slate-800">Mode Tampilan Dashboard Staf:</span>
           <span className="text-xs text-slate-500">Pilih antara tampilan antrean daftar list atau tampilan kalender jadwal</span>
         </div>
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl w-full sm:w-auto">
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl w-full sm:w-auto flex-wrap">
           <button
             onClick={() => setViewMode('LIST')}
             className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
@@ -673,7 +718,7 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
             }`}
           >
             <List className="w-4 h-4" />
-            <span>Daftar Proyek & Detail</span>
+            <span>Daftar Proyek &amp; Detail</span>
           </button>
           <button
             onClick={() => setViewMode('CALENDAR')}
@@ -686,10 +731,23 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
             <Calendar className="w-4 h-4" />
             <span>Kalender Jadwal Proyek</span>
           </button>
+          <button
+            onClick={() => setViewMode('DISCOUNTS')}
+            className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
+              viewMode === 'DISCOUNTS'
+                ? 'bg-white text-[#7d3feb] shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Tag className="w-4 h-4" />
+            <span>Kelola Diskon &amp; Promo</span>
+          </button>
         </div>
       </div>
 
-      {viewMode === 'CALENDAR' ? (
+      {viewMode === 'DISCOUNTS' ? (
+        <DiscountManager staffUser={staffUser} />
+      ) : viewMode === 'CALENDAR' ? (
         renderCalendarView()
       ) : (
         /* Main Content Layout: Table & Workstation */
@@ -759,6 +817,24 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
                         <div className="font-bold text-slate-900 text-sm">{ord.companyName}</div>
                         <div className="text-[11px] text-slate-500">
                           {ord.areaSizeM2.toLocaleString('id-ID')} m² • {ord.city}
+                        </div>
+                        {/* Informasi Tanggal Proyek (Seragam) & Tanggal Pembayaran */}
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-slate-500 mt-1 pt-1 border-t border-slate-100/70">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-purple-600" />
+                            <span>Tgl Proyek: <strong className="text-slate-800">{formatProjectDate(ord.createdAt)}</strong></span>
+                          </span>
+                          <span>•</span>
+                          <span className="flex items-center gap-1">
+                            <CreditCard className="w-3 h-3 text-emerald-600" />
+                            {ord.paidAt ? (
+                              <span className="text-emerald-700 font-bold">Bayar: {formatPaymentDate(ord.paidAt)}</span>
+                            ) : ord.paymentStatus === 'PAID' ? (
+                              <span className="text-emerald-700 font-bold">LUNAS</span>
+                            ) : (
+                              <span className="text-amber-700 font-bold">Belum Bayar</span>
+                            )}
+                          </span>
                         </div>
                       </div>
 
@@ -834,6 +910,99 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
                 </div>
               </div>
 
+              {/* Informasi Pembayaran Proyek & Tanggal Proyek Resmi (Seragam Semua Tahap) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* 1. Informasi Pembayaran */}
+                <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <CreditCard className="w-4 h-4 text-[#7d3feb]" />
+                      Status &amp; Tanggal Pembayaran:
+                    </span>
+                    {selectedOrder.paymentStatus === 'PAID' ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        LUNAS
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-amber-600" />
+                        MENUNGGU PEMBAYARAN
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="text-xs space-y-1.5 pt-1 border-t border-slate-100">
+                    <div className="flex justify-between items-center text-slate-600">
+                      <span>Tanggal Pembayaran:</span>
+                      <span className={`font-bold ${selectedOrder.paidAt ? 'text-emerald-700' : 'text-amber-700'}`}>
+                        {selectedOrder.paidAt ? formatPaymentDate(selectedOrder.paidAt) : 'Belum Dibayar'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-600">
+                      <span>Metode Pembayaran:</span>
+                      <span className="font-semibold text-slate-900">
+                        {selectedOrder.paymentMethod || (selectedOrder.paymentStatus === 'PAID' ? 'Xendit Gateway' : '-')}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-600">
+                      <span>Total Biaya Proyek:</span>
+                      <span className="font-black text-[#7d3feb] font-mono text-sm">
+                        {formatRupiah(selectedOrder.totalCost)}
+                      </span>
+                    </div>
+                    {selectedOrder.invoiceNumber && (
+                      <div className="flex justify-between items-center text-slate-600">
+                        <span>Nomor Invoice:</span>
+                        <span className="font-mono font-semibold text-slate-700 text-[11px]">
+                          {selectedOrder.invoiceNumber}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 2. Informasi Tanggal Proyek (Seragam Semua Tahapan) */}
+                <div className="p-4 bg-purple-50/60 rounded-2xl border border-purple-200 shadow-sm space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
+                      <Calendar className="w-4 h-4 text-[#7d3feb]" />
+                      Tanggal Proyek (Seragam):
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-200 text-purple-900">
+                      Satu Tanggal Resmi
+                    </span>
+                  </div>
+
+                  <div className="text-xs space-y-1.5 pt-1 border-t border-purple-200/60">
+                    <div className="flex justify-between items-center text-slate-600">
+                      <span>Tanggal Masuk Proyek:</span>
+                      <span className="font-black text-slate-900">
+                        {formatProjectDate(selectedOrder.createdAt)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-600">
+                      <span>Ketentuan Tanggal:</span>
+                      <span className="text-purple-900 font-semibold text-[11px]">
+                        Berlaku sama di seluruh tahapan (Step 1 - 5)
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-600">
+                      <span>Tahap Berjalan Saat Ini:</span>
+                      <span className="font-bold text-[#7d3feb]">
+                        {selectedOrder.status}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-600">
+                      <span>Estimasi Selesai (Target):</span>
+                      <span className="font-bold text-slate-800">
+                        {selectedOrder.estimatedEndDate ? formatProjectDate(selectedOrder.estimatedEndDate) : 'Standar 2-3 Hari Kerja'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Requirement 6: Timeline Pengerjaan & Estimasi Selesai */}
               <div className="p-4 bg-purple-50/50 rounded-2xl border border-purple-200 space-y-2">
                 <div className="flex items-center justify-between text-xs font-bold text-purple-950">
@@ -905,102 +1074,251 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
                 </div>
               </div>
 
-              {/* 2. Unduh Raw Data Customer */}
-              <div className="space-y-3">
-                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  Raw Data & Spesifikasi Input Customer
-                </h3>
+              {/* 2. Informasi Lengkap Pendaftaran Klien (Sesuai Form Pendaftaran) */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-[#7d3feb]" />
+                    Informasi Lengkap Pendaftaran Proyek (Formulir Klien)
+                  </h3>
+                  <span className="text-[11px] font-mono text-[#7d3feb] font-bold bg-purple-50 px-2.5 py-1 rounded-full border border-purple-200">
+                    ID: {selectedOrder.trackingCode}
+                  </span>
+                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-500 font-medium">Legalitas Lahan:</span>
-                      <span className="font-bold text-slate-900">
-                        {selectedOrder.landOwnershipStatus} ({selectedOrder.landOwnershipType || 'N/A'})
-                      </span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  {/* Bagian 1: Data Perusahaan & Kontak PIC */}
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                    <div className="flex items-center gap-2 text-slate-800 font-bold text-xs pb-1 border-b border-slate-200">
+                      <UserCheck className="w-4 h-4 text-[#7d3feb]" />
+                      <span>Identitas Pemohon &amp; Kontak PIC</span>
                     </div>
 
-                    {selectedOrder.landDocumentUrl ? (
-                      <div className="pt-2 border-t border-slate-200/80 space-y-1.5">
-                        <div className="text-[11px] text-slate-600 font-medium truncate flex items-center gap-1.5">
-                          <FileText className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                          <span className="truncate">{selectedOrder.landDocumentName || 'Dokumen_Legalitas_Lahan.pdf'}</span>
-                        </div>
+                    <div className="space-y-2 text-slate-600">
+                      <div className="flex justify-between items-start">
+                        <span className="text-slate-500 font-medium">Nama Perusahaan:</span>
+                        <span className="font-bold text-slate-900 text-right">{selectedOrder.companyName}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 font-medium">Nama PIC:</span>
+                        <span className="font-bold text-slate-900">{selectedOrder.contactName || '-'}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 font-medium">No. WhatsApp / HP:</span>
                         <a
-                          href={fileUrl(selectedOrder.landDocumentUrl)}
-                          download={selectedOrder.landDocumentName || `Berkas_Legalitas_${selectedOrder.trackingCode}.pdf`}
+                          href={`https://wa.me/${selectedOrder.contactPhone.replace(/^0/, '62').replace(/[^0-9]/g, '')}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex items-center justify-center gap-1.5 w-full py-1.5 px-3 bg-[#7d3feb] hover:bg-[#6f2cdb] text-white rounded-lg text-xs font-bold transition shadow-sm"
+                          className="font-bold text-[#7d3feb] underline flex items-center gap-1 hover:text-[#5e23be]"
                         >
-                          <Download className="w-3.5 h-3.5" />
-                          <span>Unduh Berkas Legalitas Lahan</span>
+                          <Phone className="w-3 h-3" />
+                          <span>{selectedOrder.contactPhone}</span>
                         </a>
                       </div>
-                    ) : (
-                      <div className="pt-1 text-[11px] text-slate-400 italic">
-                        {selectedOrder.landDocumentName ? (
-                          <span>File: {selectedOrder.landDocumentName} (Menunggu upload fisik)</span>
-                        ) : (
-                          <span>Belum ada berkas dokumen fisik yang diunggah</span>
-                        )}
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 font-medium">Email PIC:</span>
+                        <span className="font-mono text-slate-800 truncate max-w-[180px]">{selectedOrder.contactEmail || '-'}</span>
                       </div>
-                    )}
+                      <div className="flex justify-between items-center pt-1 border-t border-slate-200">
+                        <span className="text-slate-500 font-medium">Nomor Antrean:</span>
+                        <span className="font-mono font-black text-[#7d3feb] bg-purple-100 px-2 py-0.5 rounded">
+                          {selectedOrder.queueNumber || '-'}
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-                    <span className="text-slate-500 font-medium">KBLI & Bangunan:</span>
-                    <div className="font-bold text-slate-900">
-                      {selectedOrder.kbliCode} - {selectedOrder.kbliName}
+                  {/* Bagian 2: Alamat Lengkap & Administrasi Wilayah */}
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                    <div className="flex items-center gap-2 text-slate-800 font-bold text-xs pb-1 border-b border-slate-200">
+                      <MapPin className="w-4 h-4 text-[#7d3feb]" />
+                      <span>Lokasi &amp; Administrasi Wilayah Lahan</span>
                     </div>
-                    <div className="text-slate-600">
-                      {selectedOrder.buildingCount} Unit • {selectedOrder.buildingFloors} Lt • {selectedOrder.buildingHeightMeters}m
+
+                    <div className="space-y-2 text-slate-600">
+                      <div>
+                        <span className="text-slate-500 font-medium block">Alamat Lengkap / Jalan:</span>
+                        <span className="font-bold text-slate-900 block mt-0.5 leading-snug">
+                          {selectedOrder.streetAddress || 'Tidak dicantumkan'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-200">
+                        <div>
+                          <span className="text-slate-500 text-[11px] block">Kelurahan / Desa:</span>
+                          <span className="font-bold text-slate-800">{selectedOrder.village || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 text-[11px] block">Kecamatan:</span>
+                          <span className="font-bold text-slate-800">{selectedOrder.district || '-'}</span>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-slate-500 text-[11px] block">Kabupaten / Kota:</span>
+                          <span className="font-bold text-slate-800">{selectedOrder.city || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 text-[11px] block">Provinsi:</span>
+                          <span className="font-bold text-slate-800">{selectedOrder.province || '-'}</span>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center pt-1 border-t border-slate-200">
+                        <span className="text-slate-500 font-medium">Kode Pos:</span>
+                        <span className="font-mono font-bold text-slate-800">{selectedOrder.postalCode || '-'}</span>
+                      </div>
                     </div>
-                    <div className="text-[11px] text-slate-500 pt-1">
-                      Status IMB: <strong>{selectedOrder.imbStatus || 'Belum Memiliki'}</strong>
+                  </div>
+
+                  {/* Bagian 3: Legalitas & Bukti Penguasaan Lahan */}
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                    <div className="flex items-center gap-2 text-slate-800 font-bold text-xs pb-1 border-b border-slate-200">
+                      <Shield className="w-4 h-4 text-[#7d3feb]" />
+                      <span>Legalitas &amp; Dokumen Penguasaan Lahan</span>
+                    </div>
+
+                    <div className="space-y-2 text-slate-600">
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 font-medium">Status Penguasaan:</span>
+                        <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
+                          selectedOrder.landOwnershipStatus === 'Sudah Menguasai'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {selectedOrder.landOwnershipStatus || 'Belum Menguasai'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500 font-medium">Jenis Hak Atas Tanah:</span>
+                        <span className="font-bold text-slate-900">{selectedOrder.landOwnershipType || '-'}</span>
+                      </div>
+
+                      {/* Download Berkas Dokumen Fisik */}
+                      <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                        <span className="text-slate-500 text-[11px] font-medium block">Berkas Bukti Legalitas:</span>
+                        {selectedOrder.landDocumentUrl ? (
+                          <div className="space-y-1.5">
+                            <div className="text-[11px] text-slate-700 font-semibold truncate flex items-center gap-1.5">
+                              <FileText className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                              <span className="truncate">{selectedOrder.landDocumentName || 'Dokumen_Legalitas_Lahan.pdf'}</span>
+                            </div>
+                            <a
+                              href={fileUrl(selectedOrder.landDocumentUrl)}
+                              download={selectedOrder.landDocumentName || `Berkas_Legalitas_${selectedOrder.trackingCode}.pdf`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center justify-center gap-1.5 w-full py-2 px-3 bg-[#7d3feb] hover:bg-[#6f2cdb] text-white rounded-xl text-xs font-bold transition shadow-sm"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Unduh Berkas Legalitas Lahan</span>
+                            </a>
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-slate-400 italic bg-white p-2 rounded-xl border border-slate-200">
+                            {selectedOrder.landDocumentName
+                              ? `Nama Berkas: ${selectedOrder.landDocumentName} (Menunggu upload file fisik)`
+                              : 'Tidak ada dokumen legalitas fisik yang diunggah klien.'}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bagian 4: Data KBLI & Spesifikasi Bangunan */}
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                    <div className="flex items-center gap-2 text-slate-800 font-bold text-xs pb-1 border-b border-slate-200">
+                      <Building2 className="w-4 h-4 text-[#7d3feb]" />
+                      <span>KBLI OSS &amp; Parameter Bangunan</span>
+                    </div>
+
+                    <div className="space-y-2 text-slate-600">
+                      <div>
+                        <span className="text-slate-500 font-medium block">Kode &amp; Uraian KBLI:</span>
+                        <div className="font-bold text-slate-900 mt-0.5 leading-snug">
+                          {selectedOrder.kbliCode} - {selectedOrder.kbliName}
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center pt-1 border-t border-slate-200">
+                        <span className="text-slate-500 font-medium">Total Luas Lahan:</span>
+                        <span className="font-black text-[#7d3feb] text-sm font-mono">
+                          {selectedOrder.areaSizeM2?.toLocaleString('id-ID')} m²
+                          {selectedOrder.areaSizeM2 >= 10000 && ` (${(selectedOrder.areaSizeM2 / 10000).toFixed(2)} Ha)`}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-200 text-center">
+                        <div className="bg-white p-1.5 rounded-xl border border-slate-200">
+                          <span className="text-slate-400 text-[10px] block">Unit Bangunan</span>
+                          <span className="font-bold text-slate-900">{selectedOrder.buildingCount || 1} Unit</span>
+                        </div>
+                        <div className="bg-white p-1.5 rounded-xl border border-slate-200">
+                          <span className="text-slate-400 text-[10px] block">Jumlah Lantai</span>
+                          <span className="font-bold text-slate-900">{selectedOrder.buildingFloors || 1} Lt</span>
+                        </div>
+                        <div className="bg-white p-1.5 rounded-xl border border-slate-200">
+                          <span className="text-slate-400 text-[10px] block">Ketinggian</span>
+                          <span className="font-bold text-slate-900">{selectedOrder.buildingHeightMeters || 4} m</span>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center pt-1 border-t border-slate-200">
+                        <span className="text-slate-500 font-medium">Status IMB / PBG:</span>
+                        <span className="font-bold text-slate-800">{selectedOrder.imbStatus || 'Belum Memiliki'}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                  <div>
-                    <span className="font-bold text-slate-800 block">Draf Polygon / Geometri Customer:</span>
-                    <span className="text-slate-500 text-[11px]">
-                      {selectedOrder.hasPolygon
-                        ? (selectedOrder.polygonShapefileUrl ? 'File Shapefile (.ZIP) diunggah customer' : 'Polygon GeoJSON tersedia')
-                        : `Titik Koordinat: ${selectedOrder.coordinates?.lat?.toFixed(5) || '-'}, ${selectedOrder.coordinates?.lng?.toFixed(5) || '-'}`}
+                {/* Bagian 5: Draf Polygon & Geometri Lahan */}
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between pb-1 border-b border-slate-200 text-xs font-bold text-slate-800">
+                    <span className="flex items-center gap-2">
+                      <Compass className="w-4 h-4 text-[#7d3feb]" />
+                      <span>Data Geometri Peta, Shapefile &amp; Koordinat Customer</span>
+                    </span>
+                    <span className="text-[11px] text-slate-500">
+                      {selectedOrder.hasPolygon ? 'Polygon Tersedia' : 'Titik Titik Pin'}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {selectedOrder.polygonShapefileUrl && (
-                      <a
-                        href={fileUrl(selectedOrder.polygonShapefileUrl)}
-                        download={`Raw_Shapefile_${selectedOrder.trackingCode}.zip`}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#7d3feb] hover:bg-[#6f2cdb] text-white rounded-lg font-bold shadow-sm"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Unduh .ZIP Asli</span>
-                      </a>
-                    )}
-                    {selectedOrder.polygonGeoJson ? (
-                      <button
-                        type="button"
-                        onClick={() => handleDownloadCustomerPolygon(selectedOrder.polygonGeoJson, selectedOrder.trackingCode)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg font-bold text-slate-700 shadow-sm transition"
-                      >
-                        <Download className="w-3.5 h-3.5 text-[#7d3feb]" />
-                        <span>Unduh .GeoJSON</span>
-                      </button>
-                    ) : (
-                      <a
-                        href={fileUrl(selectedOrder.gisResultFiles?.geoJsonUrl || '/uploads/samples/sample_polygon.geojson')}
-                        download={`Draf_Polygon_${selectedOrder.trackingCode}.geojson`}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg font-bold text-slate-700 shadow-sm"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Unduh Geometri Draf</span>
-                      </a>
-                    )}
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                    <div>
+                      <span className="text-slate-500 block">Koordinat Pusat Lahan:</span>
+                      <span className="font-mono font-bold text-slate-800">
+                        {selectedOrder.coordinates
+                          ? `Lat: ${selectedOrder.coordinates.lat?.toFixed(5)}, Lng: ${selectedOrder.coordinates.lng?.toFixed(5)}`
+                          : 'Tidak tersedia'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {selectedOrder.polygonShapefileUrl && (
+                        <a
+                          href={fileUrl(selectedOrder.polygonShapefileUrl)}
+                          download={`Raw_Shapefile_${selectedOrder.trackingCode}.zip`}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#7d3feb] hover:bg-[#6f2cdb] text-white rounded-xl font-bold shadow-sm transition"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Unduh .ZIP Asli Klien</span>
+                        </a>
+                      )}
+                      {selectedOrder.polygonGeoJson ? (
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadCustomerPolygon(selectedOrder.polygonGeoJson, selectedOrder.trackingCode)}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-300 hover:bg-slate-100 rounded-xl font-bold text-slate-700 shadow-sm transition"
+                        >
+                          <Download className="w-3.5 h-3.5 text-[#7d3feb]" />
+                          <span>Unduh .GeoJSON</span>
+                        </button>
+                      ) : (
+                        <a
+                          href={fileUrl(selectedOrder.gisResultFiles?.geoJsonUrl || '/uploads/samples/sample_polygon.geojson')}
+                          download={`Draf_Polygon_${selectedOrder.trackingCode}.geojson`}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-300 hover:bg-slate-100 rounded-xl font-bold text-slate-700 shadow-sm transition"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Unduh Geometri Draf</span>
+                        </a>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1195,12 +1513,36 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
                   <label className="block font-bold text-slate-700 mb-1">Status Pembayaran</label>
                   <select
                     value={editingOrder.paymentStatus}
-                    onChange={(e) => setEditingOrder({ ...editingOrder, paymentStatus: e.target.value as any })}
+                    onChange={(e) => setEditingOrder({ 
+                      ...editingOrder, 
+                      paymentStatus: e.target.value as any,
+                      paidAt: e.target.value === 'PAID' && !editingOrder.paidAt ? new Date().toISOString() : editingOrder.paidAt
+                    })}
                     className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold"
                   >
                     <option value="UNPAID">Belum Dibayar (UNPAID)</option>
                     <option value="PAID">Lunas (PAID)</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Tanggal Pembayaran Proyek</label>
+                  <input
+                    type="datetime-local"
+                    value={editingOrder.paidAt ? new Date(editingOrder.paidAt).toISOString().slice(0, 16) : ''}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, paidAt: e.target.value ? new Date(e.target.value).toISOString() : undefined })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Tanggal Proyek (Seragam Semua Tahap)</label>
+                  <input
+                    type="date"
+                    value={editingOrder.createdAt ? editingOrder.createdAt.slice(0, 10) : ''}
+                    onChange={(e) => setEditingOrder({ ...editingOrder, createdAt: e.target.value ? new Date(e.target.value).toISOString() : editingOrder.createdAt })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono"
+                  />
                 </div>
 
                 <div>
@@ -1303,6 +1645,24 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
               </button>
             </div>
           </div>
+        </div>
+      )}
+      {/* Toast Notification Container */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-md bg-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-2xl flex items-center justify-between gap-4 border border-slate-700 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className="flex items-center gap-3">
+            {toast.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />}
+            {toast.type === 'error' && <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />}
+            {toast.type === 'info' && <Layers className="w-5 h-5 text-purple-400 shrink-0" />}
+            <p className="text-sm font-medium">{toast.message}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setToast(null)}
+            className="text-slate-400 hover:text-white font-bold text-lg px-1 ml-2"
+          >
+            &times;
+          </button>
         </div>
       )}
     </div>

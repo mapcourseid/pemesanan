@@ -20,7 +20,10 @@ import type { OrderItem } from '../types';
 import { formatRupiah } from '../utils/pricing';
 import { apiUrl, parseJsonResponse } from '../utils/api';
 import { syncOrderToFirebase } from '../services/firebase';
+import { requestXenditInvoice, fetchXenditInvoiceByCode } from '../services/xenditClient';
 import { WhatsAppPreviewModal } from './WhatsAppPreviewModal';
+import { XenditPaymentModal } from './XenditPaymentModal';
+import { GeneratedInvoiceView } from './GeneratedInvoiceView';
 
 interface PaymentViewProps {
   order: OrderItem | null;
@@ -38,46 +41,193 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [xenditUrl, setXenditUrl] = useState<string | null>(order?.xenditInvoiceUrl || null);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [isSimulatedInvoice, setIsSimulatedInvoice] = useState(false);
+  const [xenditWarningMessage, setXenditWarningMessage] = useState<string | null>(null);
+  const [showXenditCheckoutModal, setShowXenditCheckoutModal] = useState(false);
 
-  const handlePayWithXendit = async () => {
-    if (!order) return;
-    setIsXenditLoading(true);
-    try {
-      const res = await fetch(apiUrl('/api/payment/xendit/invoice'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+  // Pre-generate Xendit invoice saat pengguna tiba di halaman pembayaran agar tombol bisa langsung dibuka di tab baru
+  useEffect(() => {
+    if (!order || order.paymentStatus === 'PAID') return;
+    if (xenditUrl) return;
+
+    let isMounted = true;
+    const prefetchInvoice = async () => {
+      setIsXenditLoading(true);
+      try {
+        const invData = await requestXenditInvoice({
           trackingCode: order.trackingCode,
-          amount: order.totalCost,
+          totalCost: order.totalCost,
           companyName: order.companyName,
           contactName: order.contactName,
           contactPhone: order.contactPhone,
           contactEmail: order.contactEmail,
-          frontendUrl: window.location.origin,
-        }),
+        });
+
+        if (!isMounted) return;
+
+        if (invData?.invoiceUrl && !invData.isSimulated) {
+          setXenditUrl(invData.invoiceUrl);
+          setIsSimulatedInvoice(false);
+          try {
+            await syncOrderToFirebase({
+              ...order,
+              xenditInvoiceUrl: invData.invoiceUrl,
+              xenditInvoiceId: invData.invoiceId || `inv_${order.trackingCode}`,
+            });
+          } catch { /* ignore */ }
+        } else {
+          setXenditUrl(null);
+          setIsSimulatedInvoice(true);
+          if (invData?.warningMessage) {
+            setXenditWarningMessage(invData.warningMessage);
+          }
+        }
+      } catch (e) {
+        console.warn('[PaymentView] Prefetch notice:', e);
+      } finally {
+        if (isMounted) setIsXenditLoading(false);
+      }
+    };
+
+    prefetchInvoice();
+    return () => {
+      isMounted = false;
+    };
+  }, [order?.trackingCode, order?.paymentStatus]);
+
+  // Real-time Auto-Detection: Pantau status pelunasan di Xendit setiap 3 detik
+  // Jika pelanggan sudah membayar, seketika ubah tampilan menjadi Ringkasan E-Invoice Lunas!
+  useEffect(() => {
+    if (!order || order.paymentStatus === 'PAID') return;
+
+    let isMounted = true;
+    const interval = setInterval(async () => {
+      try {
+        const xenditInv = await fetchXenditInvoiceByCode(order.trackingCode);
+        if (
+          xenditInv &&
+          (xenditInv.status === 'SETTLED' || xenditInv.status === 'PAID')
+        ) {
+          if (!isMounted) return;
+          clearInterval(interval);
+
+          const updatedOrder: OrderItem = {
+            ...order,
+            paymentStatus: 'PAID',
+            status: 'Verifikasi Berkas',
+            paidAt: xenditInv.paid_at || new Date().toISOString(),
+            paymentMethod: `Xendit (${xenditInv.payment_channel || xenditInv.payment_method || 'Virtual Account'})`,
+            invoiceNumber: order.invoiceNumber || `INV/${new Date().getFullYear()}/${order.trackingCode}`,
+          };
+
+          // Simpan ke localStorage & Firebase
+          try {
+            const stored: OrderItem[] = JSON.parse(localStorage.getItem('mapcourse_local_orders') || '[]');
+            const idx = stored.findIndex((o) => o.trackingCode === order.trackingCode);
+            if (idx !== -1) stored[idx] = updatedOrder; else stored.unshift(updatedOrder);
+            localStorage.setItem('mapcourse_local_orders', JSON.stringify(stored));
+            await syncOrderToFirebase(updatedOrder);
+          } catch { /* ignore */ }
+
+          // Selebrasi & Tampilkan Ringkasan Invoice Lunas
+          confetti({
+            particleCount: 120,
+            spread: 70,
+            origin: { y: 0.6 },
+          });
+          onPaymentSuccess(updatedOrder);
+        }
+      } catch (err) {
+        // Abaikan kegagalan sementara
+      }
+    }, 3000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [order?.trackingCode, order?.paymentStatus, onPaymentSuccess]);
+
+  const handlePayWithXendit = async () => {
+    if (!order) return;
+
+    // Jika xenditUrl sudah tersedia dan valid resmi, langsung alihkan
+    if (xenditUrl && !xenditUrl.includes('?demo=true')) {
+      window.location.href = xenditUrl;
+      return;
+    }
+
+    setIsXenditLoading(true);
+    try {
+      const invData = await requestXenditInvoice({
+        trackingCode: order.trackingCode,
+        totalCost: order.totalCost,
+        companyName: order.companyName,
+        contactName: order.contactName,
+        contactPhone: order.contactPhone,
+        contactEmail: order.contactEmail,
       });
 
-      const data = await parseJsonResponse<{ invoiceUrl?: string; invoiceId?: string; isSimulated?: boolean }>(res, 'Gagal memanggil gateway Xendit');
-
-      // HANYA alihkan jika URL invoice valid dan resmi dari Xendit (bukan URL palsu/demo yang menyebabkan 404 di xendit.co)
-      if (data.invoiceUrl && !data.invoiceUrl.includes('?demo=true') && !data.isSimulated) {
-        setXenditUrl(data.invoiceUrl);
+      if (invData?.invoiceUrl && !invData.isSimulated) {
+        setXenditUrl(invData.invoiceUrl);
         try {
           await syncOrderToFirebase({
             ...order,
-            xenditInvoiceUrl: data.invoiceUrl,
-            xenditInvoiceId: data.invoiceId || `inv_${order.trackingCode}`,
+            xenditInvoiceUrl: invData.invoiceUrl,
+            xenditInvoiceId: invData.invoiceId || `inv_${order.trackingCode}`,
           });
-        } catch (e) { /* ignore */ }
+        } catch { /* ignore */ }
 
-        window.location.href = data.invoiceUrl;
+        // Alihkan peramban di tab yang sama ke invoice resmi Xendit
+        window.location.href = invData.invoiceUrl;
         return;
+      } else {
+        setIsSimulatedInvoice(true);
+        if (invData?.warningMessage) setXenditWarningMessage(invData.warningMessage);
+        setShowXenditCheckoutModal(true);
       }
     } catch (err: any) {
-      console.warn('[PaymentView] Xendit notice:', err);
+      console.warn('[PaymentView] Xendit error:', err);
+      setShowXenditCheckoutModal(true);
     } finally {
       setIsXenditLoading(false);
     }
+  };
+
+  const handlePaymentSuccessWithMethod = async (methodName: string) => {
+    if (!order) return;
+    setIsProcessing(true);
+    const updatedOrder: OrderItem = {
+      ...order,
+      paymentStatus: 'PAID',
+      status: 'Verifikasi Berkas',
+      paidAt: new Date().toISOString(),
+      paymentMethod: methodName,
+    };
+
+    try {
+      await fetch(apiUrl(`/api/orders/${order.trackingCode}/status`), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'Verifikasi Berkas',
+          paymentStatus: 'PAID',
+          paymentMethod: methodName,
+        }),
+      });
+    } catch { /* ignore */ }
+
+    try {
+      await syncOrderToFirebase(updatedOrder);
+    } catch { /* ignore */ }
+
+    setIsProcessing(false);
+    onPaymentSuccess(updatedOrder);
+    confetti({
+      particleCount: 120,
+      spread: 70,
+      origin: { y: 0.6 },
+    });
   };
 
   const handleSimulatePayment = async () => {
@@ -137,6 +287,10 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
 
   const isPaid = order.paymentStatus === 'PAID';
 
+  if (isPaid) {
+    return <GeneratedInvoiceView order={order} onGoToTracking={onGoToTracking} />;
+  }
+
   const waWelcomeMessage = `Terima kasih! Pembayaran Anda telah kami terima.\n\nNomor Antrean Pengerjaan Anda: ${order.queueNumber || '#08'}.\nNomor Invoice: ${order.invoiceNumber || 'INV/20261003/POL-014'}\nTotal Tagihan: ${formatRupiah(order.totalCost)}\n\nPantau progres pengerjaan Polygon & RTB Anda secara langsung di sini: https://tracking.domainanda.com/track/${order.trackingCode}`;
 
   const handlePrintInvoice = () => {
@@ -190,6 +344,15 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
         phone={order.contactPhone}
         recipientName={order.companyName}
         messageText={waWelcomeMessage}
+      />
+
+      {/* Xendit Interactive Checkout Modal */}
+      <XenditPaymentModal
+        isOpen={showXenditCheckoutModal}
+        onClose={() => setShowXenditCheckoutModal(false)}
+        order={order}
+        onPaymentSuccess={handlePaymentSuccessWithMethod}
+        xenditWarning={xenditWarningMessage}
       />
 
       {/* Header */}
@@ -251,22 +414,81 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
                 </div>
               </div>
 
-              {/* Pay Button */}
-              <button
-                onClick={handlePayWithXendit}
-                disabled={isXenditLoading}
-                className="w-full py-4 px-4 bg-gradient-to-r from-[#002b49] via-[#005288] to-[#0070ba] hover:opacity-95 active:scale-[0.99] text-white font-extrabold rounded-2xl shadow-xl shadow-blue-900/20 flex items-center justify-center gap-2.5 transition border border-sky-400/30"
-              >
-                <CreditCard className="w-5 h-5 text-sky-300" />
-                <span className="text-sm">
-                  {isXenditLoading ? 'Menyiapkan Checkout Xendit...' : 'Bayar via Xendit Payment Gateway ➔'}
-                </span>
-              </button>
+              {/* Pay Button / Direct Link */}
+              {xenditUrl && !isSimulatedInvoice ? (
+                <div className="space-y-3">
+                  <a
+                    href={xenditUrl}
+                    className="w-full py-4 px-4 bg-gradient-to-r from-[#002b49] via-[#005288] to-[#0070ba] hover:opacity-95 active:scale-[0.99] text-white font-black text-sm rounded-2xl shadow-xl shadow-blue-900/25 flex items-center justify-center gap-2.5 transition border border-sky-400/40 text-center"
+                  >
+                    <CreditCard className="w-5 h-5 text-sky-300 shrink-0" />
+                    <span>Lanjutkan Pembayaran via Xendit ➔</span>
+                  </a>
+
+                  <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs text-emerald-900 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 truncate">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span className="truncate">Tagihan Xendit aktif &amp; siap dibayar.</span>
+                    </div>
+                    <a
+                      href={xenditUrl}
+                      className="font-bold underline text-emerald-800 shrink-0 flex items-center gap-1 hover:text-emerald-950"
+                    >
+                      Buka Pembayaran <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePaymentSuccessWithMethod('Xendit Payment Gateway (Terverifikasi)')}
+                    disabled={isProcessing}
+                    className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white font-extrabold rounded-2xl text-xs flex items-center justify-center gap-2 transition shadow-md"
+                  >
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span>Saya Sudah Menyelesaikan Pembayaran di Xendit</span>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={handlePayWithXendit}
+                  disabled={isXenditLoading}
+                  className="w-full py-4 px-4 bg-gradient-to-r from-[#002b49] via-[#005288] to-[#0070ba] hover:opacity-95 active:scale-[0.99] text-white font-extrabold rounded-2xl shadow-xl shadow-blue-900/20 flex items-center justify-center gap-2.5 transition border border-sky-400/30"
+                >
+                  <CreditCard className="w-5 h-5 text-sky-300 shrink-0" />
+                  <span className="text-sm">
+                    {isXenditLoading ? 'Menyiapkan Checkout Xendit...' : 'Bayar via Xendit Payment Gateway ➔'}
+                  </span>
+                </button>
+              )}
 
               <div className="flex items-center justify-center gap-2 text-[11px] text-slate-500">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
                 <span>Transaksi aman diproses oleh <strong>Xendit</strong> • Terenkripsi SSL</span>
               </div>
+
+              {isSimulatedInvoice && (
+                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 space-y-2">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-950">
+                    <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Mode Simulasi Xendit Aktif</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    {xenditWarningMessage || (
+                      <>
+                        Kunci <code>XENDIT_SECRET_KEY</code> belum diisi dengan API Key asli dari Dashboard Xendit. Anda tetap dapat menguji coba alur pembayaran secara penuh menggunakan simulator checkout kami.
+                      </>
+                    )}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowXenditCheckoutModal(true)}
+                    className="w-full py-2 px-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition shadow-sm"
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    <span>Buka Tampilan Checkout Xendit (QRIS &amp; Virtual Account)</span>
+                  </button>
+                </div>
+              )}
 
               {xenditUrl && (
                 <div className="p-3 bg-sky-50 border border-sky-200 rounded-xl flex items-center justify-between text-xs text-sky-900">

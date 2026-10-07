@@ -45,7 +45,7 @@ function getSimulatedInvoice(params: CreateInvoiceParams) {
     amount: params.amount,
     description: params.description,
     payer_email: params.payerEmail || "customer@mapcourse.id",
-    invoice_url: `https://checkout.xendit.co/web/${params.externalId}?demo=true`,
+    invoice_url: "",
     currency: "IDR",
     isSimulated: true,
   };

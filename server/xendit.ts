@@ -39,7 +39,7 @@ function getSimulatedInvoice(params: CreateInvoiceParams, warning?: string): Xen
     amount: params.amount,
     description: params.description,
     payer_email: params.payerEmail || 'customer@mapcourse.id',
-    invoice_url: `https://checkout.xendit.co/web/${params.externalId}?demo=true`,
+    invoice_url: '',
     currency: 'IDR',
     isSimulated: true,
     warningMessage: warning,
@@ -127,10 +127,10 @@ export async function createXenditInvoice(params: CreateInvoiceParams): Promise<
         errorMsg.toLowerCase().includes('api key') ||
         errorMsg.toLowerCase().includes('invalid')
       ) {
-        console.warn('[Xendit API] XENDIT_SECRET_KEY di Railway ditolak oleh Xendit (Invalid API Key). Mengalihkan ke mode simulasi aman:', errorMsg);
+        console.warn('[Xendit API] XENDIT_SECRET_KEY ditolak oleh server Xendit (Invalid API Key):', errorMsg);
         return getSimulatedInvoice(
           params,
-          'XENDIT_SECRET_KEY di Railway tidak valid. Silakan perbarui API Key Secret di Railway Dashboard -> Environment Variables. Pembayaran dialihkan ke mode simulasi.'
+          'XENDIT_SECRET_KEY ditolak oleh server Xendit (401 INVALID_API_KEY). Pastikan Secret Key disalin lengkap dari Dashboard Xendit (Pengaturan > API Keys) dengan izin Money-in (WRITE).'
         );
       }
 
@@ -165,4 +165,33 @@ export function verifyXenditWebhookToken(tokenFromHeader?: string | string[]): b
   }
   const token = Array.isArray(tokenFromHeader) ? tokenFromHeader[0] : tokenFromHeader;
   return token === expectedToken;
+}
+
+/**
+ * Cari data status invoice Xendit dari server Xendit berdasarkan external_id
+ */
+export async function getXenditInvoiceByExternalId(externalId: string): Promise<any | null> {
+  const secretKey = process.env.XENDIT_SECRET_KEY;
+  if (!secretKey || secretKey.trim() === '' || secretKey.includes('your_') || secretKey.includes('dummy')) {
+    return null;
+  }
+
+  const basicAuth = Buffer.from(`${secretKey}:`).toString('base64');
+  try {
+    const response = await fetch(`https://api.xendit.co/v2/invoices?external_id=${encodeURIComponent(externalId.trim())}`, {
+      headers: {
+        Authorization: `Basic ${basicAuth}`,
+      },
+    });
+
+    if (response.ok) {
+      const list = await response.json();
+      if (Array.isArray(list) && list.length > 0) {
+        return list[0];
+      }
+    }
+  } catch (err) {
+    console.warn('[Xendit Server] Gagal memeriksa invoice:', err);
+  }
+  return null;
 }
