@@ -35,6 +35,7 @@ import {
 import type { OrderItem, OrderStatus } from '../types';
 import { formatRupiah, AVAILABLE_COUPONS } from '../utils/pricing';
 import { WhatsAppPreviewModal } from './WhatsAppPreviewModal';
+import { DiscountManager } from './DiscountManager';
 import { syncOrderToFirebase, subscribeToFirebaseOrders, deleteOrderFromFirebase } from '../services/firebase';
 import { apiUrl, fileUrl, parseJsonResponse } from '../utils/api';
 
@@ -87,8 +88,8 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
   const [stats, setStats] = useState<any>(null);
   const [selectedOrder, setSelectedOrder] = useState<OrderItem | null>(null);
 
-  // View Mode: 'LIST' or 'CALENDAR' (Requirement 6)
-  const [viewMode, setViewMode] = useState<'LIST' | 'CALENDAR'>('LIST');
+  // View Mode: 'LIST' | 'CALENDAR' | 'DISCOUNTS'
+  const [viewMode, setViewMode] = useState<'LIST' | 'CALENDAR' | 'DISCOUNTS'>('LIST');
   const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
 
   // Edit & Delete Modals (Requirement 4)
@@ -707,7 +708,7 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
           <span className="text-xs font-bold text-slate-800">Mode Tampilan Dashboard Staf:</span>
           <span className="text-xs text-slate-500">Pilih antara tampilan antrean daftar list atau tampilan kalender jadwal</span>
         </div>
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl w-full sm:w-auto">
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl w-full sm:w-auto flex-wrap">
           <button
             onClick={() => setViewMode('LIST')}
             className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
@@ -717,7 +718,7 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
             }`}
           >
             <List className="w-4 h-4" />
-            <span>Daftar Proyek & Detail</span>
+            <span>Daftar Proyek &amp; Detail</span>
           </button>
           <button
             onClick={() => setViewMode('CALENDAR')}
@@ -730,10 +731,23 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
             <Calendar className="w-4 h-4" />
             <span>Kalender Jadwal Proyek</span>
           </button>
+          <button
+            onClick={() => setViewMode('DISCOUNTS')}
+            className={`flex-1 sm:flex-none px-4 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
+              viewMode === 'DISCOUNTS'
+                ? 'bg-white text-[#7d3feb] shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Tag className="w-4 h-4" />
+            <span>Kelola Diskon &amp; Promo</span>
+          </button>
         </div>
       </div>
 
-      {viewMode === 'CALENDAR' ? (
+      {viewMode === 'DISCOUNTS' ? (
+        <DiscountManager staffUser={staffUser} />
+      ) : viewMode === 'CALENDAR' ? (
         renderCalendarView()
       ) : (
         /* Main Content Layout: Table & Workstation */

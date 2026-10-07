@@ -18,6 +18,7 @@ import {
   type User,
 } from 'firebase/auth';
 import type { OrderItem } from '../types';
+import type { PromoCoupon } from '../utils/pricing';
 
 // =========================================================
 // KONFIGURASI FIREBASE RESMI MAP COURSE
@@ -180,6 +181,94 @@ export function subscribeToFirebaseOrders(
     return () => off(ordersRef, 'value', callback);
   } catch (err) {
     console.warn('[Firebase] Subscription notice:', err);
+    return () => {};
+  }
+}
+
+// =========================================================
+// MANAJEMEN DISKON & KUPON PROMO FIREBASE
+// =========================================================
+export async function syncDiscountToFirebase(coupon: PromoCoupon): Promise<boolean> {
+  const cleanCode = coupon.code.trim().toUpperCase();
+  const cleanCoupon: PromoCoupon = {
+    ...coupon,
+    code: cleanCode,
+    isActive: coupon.isActive ?? true,
+    createdAt: coupon.createdAt || new Date().toISOString(),
+  };
+
+  if (dbInstance) {
+    try {
+      const discountRef = ref(dbInstance, `mapcourse/discounts/${cleanCode}`);
+      await set(discountRef, cleanCoupon);
+      console.log(`[Firebase] Diskon ${cleanCode} tersinkronisasi via SDK!`);
+      return true;
+    } catch (sdkErr) {
+      console.warn('[Firebase SDK] Sync discount notice:', sdkErr);
+    }
+  }
+
+  // REST fallback
+  try {
+    const url = `https://pemesanan-688f7-default-rtdb.asia-southeast1.firebasedatabase.app/mapcourse/discounts/${cleanCode}.json`;
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cleanCoupon),
+    });
+    if (res.ok) {
+      console.log(`[Firebase REST] Diskon ${cleanCode} tersinkronisasi via REST!`);
+      return true;
+    }
+  } catch (restErr) {
+    console.warn('[Firebase REST] Sync discount notice:', restErr);
+  }
+
+  return false;
+}
+
+export async function deleteDiscountFromFirebase(code: string): Promise<boolean> {
+  const cleanCode = code.trim().toUpperCase();
+  if (dbInstance) {
+    try {
+      const discountRef = ref(dbInstance, `mapcourse/discounts/${cleanCode}`);
+      await remove(discountRef);
+      console.log(`[Firebase] Diskon ${cleanCode} berhasil dihapus dari cloud!`);
+      return true;
+    } catch (err) {
+      console.warn('[Firebase] Delete discount notice:', err);
+    }
+  }
+
+  try {
+    const url = `https://pemesanan-688f7-default-rtdb.asia-southeast1.firebasedatabase.app/mapcourse/discounts/${cleanCode}.json`;
+    const res = await fetch(url, { method: 'DELETE' });
+    if (res.ok) return true;
+  } catch (restErr) {
+    console.warn('[Firebase REST] Delete discount notice:', restErr);
+  }
+
+  return false;
+}
+
+export function subscribeToFirebaseDiscounts(
+  onData: (coupons: PromoCoupon[]) => void
+): () => void {
+  if (!dbInstance) return () => {};
+  try {
+    const discountsRef = ref(dbInstance, 'mapcourse/discounts');
+    const callback = onValue(discountsRef, (snapshot) => {
+      const val = snapshot.val();
+      if (val) {
+        const list = Object.values(val) as PromoCoupon[];
+        onData(list);
+      } else {
+        onData([]);
+      }
+    });
+    return () => off(discountsRef, 'value', callback);
+  } catch (err) {
+    console.warn('[Firebase] Subscription discounts notice:', err);
     return () => {};
   }
 }

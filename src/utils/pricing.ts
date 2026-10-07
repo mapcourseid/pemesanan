@@ -12,34 +12,101 @@ export interface PromoCoupon {
   discountType: 'PERCENT' | 'FIXED';
   discountValue: number;
   description: string;
+  isActive?: boolean;
+  minAreaM2?: number;
+  createdAt?: string;
+  createdBy?: string;
 }
 
-export const AVAILABLE_COUPONS: Record<string, PromoCoupon> = {
-  'PROMOATR': {
-    code: 'PROMOATR',
-    discountType: 'FIXED',
-    discountValue: 500000,
-    description: 'Voucher Subsidi Pemetaan ATR/BPN (Potongan Rp 500.000)',
-  },
+export const DEFAULT_COUPONS: Record<string, PromoCoupon> = {
   'DISKON10': {
     code: 'DISKON10',
     discountType: 'PERCENT',
     discountValue: 10,
     description: 'Diskon Spesial 10% Semua Luasan Proyek',
+    isActive: true,
   },
   'MAPCOURSE20': {
     code: 'MAPCOURSE20',
     discountType: 'PERCENT',
     discountValue: 20,
     description: 'Promo Eksklusif Kemitraan MAP COURSE (Diskon 20%)',
+    isActive: true,
   },
   'LAUNCH1JT': {
     code: 'LAUNCH1JT',
     discountType: 'FIXED',
     discountValue: 1000000,
-    description: 'Potongan Khusus Launching Rp 1.000.000',
+    description: 'Potongan Khusus Peluncuran Rp 1.000.000',
+    isActive: true,
   },
 };
+
+// Compatibility alias
+export const AVAILABLE_COUPONS = DEFAULT_COUPONS;
+
+/**
+ * Mengambil seluruh daftar kupon diskon (gabungan default + custom dari staff)
+ */
+export function getAllCoupons(): Record<string, PromoCoupon> {
+  const result: Record<string, PromoCoupon> = { ...DEFAULT_COUPONS };
+  try {
+    const custom = JSON.parse(localStorage.getItem('mapcourse_custom_discounts') || '{}');
+    Object.keys(custom).forEach((k) => {
+      const code = k.trim().toUpperCase();
+      result[code] = custom[k];
+    });
+  } catch (err) {
+    console.warn('[Pricing] Error loading custom coupons:', err);
+  }
+  return result;
+}
+
+/**
+ * Mencari kupon yang sedang aktif dan valid
+ */
+export function findActiveCoupon(code: string): PromoCoupon | null {
+  if (!code) return null;
+  const cleanCode = code.trim().toUpperCase();
+  const all = getAllCoupons();
+  const coupon = all[cleanCode];
+  if (!coupon) return null;
+  if (coupon.isActive === false) return null;
+  return coupon;
+}
+
+/**
+ * Menyimpan kupon baru/update ke local cache
+ */
+export function saveCustomCoupon(coupon: PromoCoupon): void {
+  try {
+    const custom = JSON.parse(localStorage.getItem('mapcourse_custom_discounts') || '{}');
+    const cleanCode = coupon.code.trim().toUpperCase();
+    custom[cleanCode] = {
+      ...coupon,
+      code: cleanCode,
+      isActive: coupon.isActive ?? true,
+      createdAt: coupon.createdAt || new Date().toISOString(),
+    };
+    localStorage.setItem('mapcourse_custom_discounts', JSON.stringify(custom));
+  } catch (err) {
+    console.warn('[Pricing] Error saving custom coupon:', err);
+  }
+}
+
+/**
+ * Menghapus kupon dari local cache
+ */
+export function deleteCustomCoupon(code: string): void {
+  try {
+    const cleanCode = code.trim().toUpperCase();
+    const custom = JSON.parse(localStorage.getItem('mapcourse_custom_discounts') || '{}');
+    delete custom[cleanCode];
+    localStorage.setItem('mapcourse_custom_discounts', JSON.stringify(custom));
+  } catch (err) {
+    console.warn('[Pricing] Error deleting custom coupon:', err);
+  }
+}
 
 export interface PricingCalculationResult {
   isAbove3000m2: boolean;
@@ -151,18 +218,21 @@ export function calculateOrderPrice(
     };
   }
 
-  // Hitung Diskon
+  // Hitung Diskon dari Kupon Aktif
   let discountAmount = 0;
   let appliedCoupon: PromoCoupon | undefined = undefined;
 
   if (discountCode) {
-    const cleanCode = discountCode.trim().toUpperCase();
-    if (AVAILABLE_COUPONS[cleanCode]) {
-      appliedCoupon = AVAILABLE_COUPONS[cleanCode];
-      if (appliedCoupon.discountType === 'PERCENT') {
-        discountAmount = Math.round((subtotal * appliedCoupon.discountValue) / 100);
-      } else {
-        discountAmount = appliedCoupon.discountValue;
+    const coupon = findActiveCoupon(discountCode);
+    if (coupon) {
+      // Periksa minimal luas jika ada
+      if (!coupon.minAreaM2 || areaM2 >= coupon.minAreaM2) {
+        appliedCoupon = coupon;
+        if (coupon.discountType === 'PERCENT') {
+          discountAmount = Math.round((subtotal * coupon.discountValue) / 100);
+        } else {
+          discountAmount = coupon.discountValue;
+        }
       }
     }
   }

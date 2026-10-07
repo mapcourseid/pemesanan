@@ -17,12 +17,12 @@ import { LeafletMapPreview } from './LeafletMapPreview';
 import { 
   calculateOrderPrice, 
   formatRupiah, 
-  AVAILABLE_COUPONS 
+  findActiveCoupon 
 } from '../utils/pricing';
 import type { AssessmentFactorInput } from '../utils/pricing';
 import type { OrderItem } from '../types';
 import { apiUrl, parseJsonResponse } from '../utils/api';
-import { syncOrderToFirebase } from '../services/firebase';
+import { syncOrderToFirebase, subscribeToFirebaseDiscounts } from '../services/firebase';
 import { requestXenditInvoice } from '../services/xenditClient';
 import shp from 'shpjs';
 
@@ -127,6 +127,22 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
     }
   }, [presetData]);
 
+  // Subscribe ke pembaruan kupon diskon dari Firebase
+  useEffect(() => {
+    const unsub = subscribeToFirebaseDiscounts((coupons) => {
+      if (coupons && coupons.length > 0) {
+        try {
+          const custom: Record<string, any> = {};
+          coupons.forEach((c) => {
+            if (c && c.code) custom[c.code.toUpperCase()] = c;
+          });
+          localStorage.setItem('mapcourse_custom_discounts', JSON.stringify(custom));
+        } catch { /* ignore */ }
+      }
+    });
+    return () => unsub();
+  }, []);
+
   // Compute live calculation
   const pricingResult = calculateOrderPrice(actualAreaM2, factors, appliedCouponCode);
 
@@ -137,10 +153,15 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
       setAppliedCouponCode('');
       return;
     }
-    if (AVAILABLE_COUPONS[clean]) {
+    const coupon = findActiveCoupon(clean);
+    if (coupon) {
+      if (coupon.minAreaM2 && actualAreaM2 < coupon.minAreaM2) {
+        setCouponError(`Kupon ini hanya berlaku untuk luas lahan minimal ${coupon.minAreaM2.toLocaleString('id-ID')} m²`);
+        return;
+      }
       setAppliedCouponCode(clean);
     } else {
-      setCouponError('Kode voucher tidak valid atau sudah kedaluwarsa.');
+      setCouponError('Kode kupon tidak valid atau sudah tidak aktif.');
     }
   };
 
@@ -1195,7 +1216,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
                   type="text"
                   value={couponInput}
                   onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
-                  placeholder="KODE: PROMOATR / DISKON10"
+                  placeholder="Masukkan kode kupon"
                   className="flex-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold uppercase focus:ring-2 focus:ring-[#7d3feb]"
                 />
                 <button
