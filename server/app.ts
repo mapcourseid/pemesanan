@@ -6,7 +6,7 @@ import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { OrderItem, OrderStatus } from './types';
 import { calculateOrderPrice } from './pricing';
-import { createXenditInvoice, verifyXenditWebhookToken } from './xendit';
+import { createXenditInvoice, verifyXenditWebhookToken, getXenditInvoiceByExternalId } from './xendit';
 
 export const app = express();
 
@@ -348,6 +348,22 @@ app.post('/api/payment/xendit/invoice', async (req, res) => {
   } catch (err: any) {
     console.error('Error creating Xendit invoice:', err);
     res.status(500).json({ error: err.message || 'Gagal membuat tagihan Xendit.' });
+  }
+});
+
+// Xendit: Check Invoice Status by Tracking Code
+app.get('/api/payment/xendit/status/:code', async (req, res) => {
+  const code = (req.params.code || '').trim();
+  if (!code) {
+    return res.status(400).json({ error: 'Kode pesanan wajib diisi.' });
+  }
+
+  try {
+    const invoice = await getXenditInvoiceByExternalId(code);
+    return res.json({ success: true, invoice });
+  } catch (err: any) {
+    console.warn('[Xendit Status Route] Error:', err);
+    return res.status(500).json({ error: 'Gagal mengambil status invoice.' });
   }
 });
 

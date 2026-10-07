@@ -166,3 +166,32 @@ export function verifyXenditWebhookToken(tokenFromHeader?: string | string[]): b
   const token = Array.isArray(tokenFromHeader) ? tokenFromHeader[0] : tokenFromHeader;
   return token === expectedToken;
 }
+
+/**
+ * Cari data status invoice Xendit dari server Xendit berdasarkan external_id
+ */
+export async function getXenditInvoiceByExternalId(externalId: string): Promise<any | null> {
+  const secretKey = process.env.XENDIT_SECRET_KEY;
+  if (!secretKey || secretKey.trim() === '' || secretKey.includes('your_') || secretKey.includes('dummy')) {
+    return null;
+  }
+
+  const basicAuth = Buffer.from(`${secretKey}:`).toString('base64');
+  try {
+    const response = await fetch(`https://api.xendit.co/v2/invoices?external_id=${encodeURIComponent(externalId.trim())}`, {
+      headers: {
+        Authorization: `Basic ${basicAuth}`,
+      },
+    });
+
+    if (response.ok) {
+      const list = await response.json();
+      if (Array.isArray(list) && list.length > 0) {
+        return list[0];
+      }
+    }
+  } catch (err) {
+    console.warn('[Xendit Server] Gagal memeriksa invoice:', err);
+  }
+  return null;
+}
