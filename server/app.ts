@@ -328,7 +328,7 @@ app.post('/api/payment/xendit/invoice', async (req, res) => {
       customerName: contactName,
       customerPhone: contactPhone,
       payerEmail: contactEmail || undefined,
-      successRedirectUrl: frontendUrl ? `${frontendUrl}/?tab=tracking&code=${trackingCode}&payment=success` : undefined,
+      successRedirectUrl: frontendUrl ? `${frontendUrl}/?tab=payment&code=${trackingCode}&payment=success` : undefined,
       failureRedirectUrl: frontendUrl ? `${frontendUrl}/?tab=payment&code=${trackingCode}&payment=failed` : undefined,
     });
 

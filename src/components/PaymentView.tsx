@@ -367,7 +367,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
             </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 mt-1">
-            {isPaid ? 'Pembayaran Berhasil & E-Invoice Terbit' : 'Penyelesaian Pembayaran via Xendit'}
+            {isPaid ? 'Rangkuman Invoice Resmi • Pembayaran Lunas' : 'Penyelesaian Pembayaran via Xendit'}
           </h1>
         </div>
 

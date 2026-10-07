@@ -1273,9 +1273,9 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-4 px-4 bg-[#7d3feb] hover:bg-[#6f2cdb] active:scale-[0.99] text-white font-bold rounded-2xl shadow-lg shadow-purple-500/30 flex items-center justify-center gap-2 transition"
+              className="w-full py-4 px-4 bg-[#7d3feb] hover:bg-[#6f2cdb] active:scale-[0.99] text-white font-bold rounded-2xl shadow-lg shadow-purple-500/30 flex items-center justify-center gap-2 transition disabled:opacity-75 disabled:cursor-not-allowed"
             >
-              <span>{isSubmitting ? 'Memproses Pesanan...' : 'Ajukan Pesanan & Terbitkan Invoice'}</span>
+              <span>{isSubmitting ? 'Menghubungkan ke Gateway Xendit...' : 'Ajukan Pesanan & Bayar via Xendit'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

@@ -38,12 +38,12 @@ export function App() {
 
     // Handle post-payment return from Xendit
     const params = new URLSearchParams(window.location.search);
-    const paymentStatus = params.get('payment');
+    const paymentStatus = params.get('payment') || params.get('payment_status');
     const tab = params.get('tab');
     const code = params.get('code');
 
-    if (paymentStatus === 'success' && code) {
-      // Mark order as PAID and redirect to payment success/invoice view
+    if ((paymentStatus === 'success' || tab === 'invoice') && code) {
+      // Mark order as PAID and redirect to payment success / official invoice view
       handlePostPaymentReturn(code);
     } else if (tab === 'tracking' && code) {
       setTrackingCodeToView(code);
