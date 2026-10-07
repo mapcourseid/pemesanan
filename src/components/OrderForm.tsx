@@ -443,7 +443,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
           contactEmail: createdOrder.contactEmail,
         });
 
-        if (invResult?.invoiceUrl) {
+        if (invResult?.invoiceUrl && !invResult.isSimulated) {
           createdOrder.xenditInvoiceUrl = invResult.invoiceUrl;
           createdOrder.xenditInvoiceId = invResult.invoiceId;
 
@@ -455,11 +455,11 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
             await syncOrderToFirebase(createdOrder);
           } catch { /* ignore */ }
 
-          // Alihkan pengguna ke halaman checkout Xendit di tab yang sama (tanpa popup tab baru)
+          // Alihkan pengguna ke halaman checkout resmi Xendit di tab yang sama
           window.location.href = invResult.invoiceUrl;
           return;
         } else {
-          // Fallback ke tab pembayaran internal di tab yang sama
+          // Fallback ke tab pembayaran internal di tab yang sama tanpa melempar ke halaman error Xendit
           window.location.href = `${window.location.origin}/?tab=payment&code=${createdOrder.trackingCode}`;
           return;
         }

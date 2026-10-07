@@ -65,8 +65,9 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
 
         if (!isMounted) return;
 
-        if (invData?.invoiceUrl) {
+        if (invData?.invoiceUrl && !invData.isSimulated) {
           setXenditUrl(invData.invoiceUrl);
+          setIsSimulatedInvoice(false);
           try {
             await syncOrderToFirebase({
               ...order,
@@ -74,6 +75,12 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
               xenditInvoiceId: invData.invoiceId || `inv_${order.trackingCode}`,
             });
           } catch { /* ignore */ }
+        } else {
+          setXenditUrl(null);
+          setIsSimulatedInvoice(true);
+          if (invData?.warningMessage) {
+            setXenditWarningMessage(invData.warningMessage);
+          }
         }
       } catch (e) {
         console.warn('[PaymentView] Prefetch notice:', e);
@@ -144,8 +151,8 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
   const handlePayWithXendit = async () => {
     if (!order) return;
 
-    // Jika xenditUrl sudah tersedia, langsung alihkan di tab yang sama
-    if (xenditUrl) {
+    // Jika xenditUrl sudah tersedia dan valid resmi, langsung alihkan
+    if (xenditUrl && !xenditUrl.includes('?demo=true')) {
       window.location.href = xenditUrl;
       return;
     }
@@ -161,7 +168,7 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
         contactEmail: order.contactEmail,
       });
 
-      if (invData?.invoiceUrl) {
+      if (invData?.invoiceUrl && !invData.isSimulated) {
         setXenditUrl(invData.invoiceUrl);
         try {
           await syncOrderToFirebase({
@@ -171,12 +178,17 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
           });
         } catch { /* ignore */ }
 
-        // Alihkan peramban di tab yang sama
+        // Alihkan peramban di tab yang sama ke invoice resmi Xendit
         window.location.href = invData.invoiceUrl;
         return;
+      } else {
+        setIsSimulatedInvoice(true);
+        if (invData?.warningMessage) setXenditWarningMessage(invData.warningMessage);
+        setShowXenditCheckoutModal(true);
       }
     } catch (err: any) {
       console.warn('[PaymentView] Xendit error:', err);
+      setShowXenditCheckoutModal(true);
     } finally {
       setIsXenditLoading(false);
     }

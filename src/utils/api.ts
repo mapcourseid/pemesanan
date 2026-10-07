@@ -47,14 +47,15 @@ export function apiUrl(path: string): string {
     }
   }
 
-  // Jika diakses dari domain statis Firebase Hosting tanpa backend lokal
+  // Jika diakses dari domain statis Firebase Hosting dengan Cloud Function rewrites
   if (
     !API_BASE_URL &&
     typeof window !== 'undefined' &&
     (window.location.hostname.includes('firebaseapp.com') ||
       window.location.hostname.includes('web.app'))
   ) {
-    return `${DEFAULT_REMOTE_BACKEND}${cleanPath}`;
+    // Dengan rewrites di firebase.json, endpoint /api/payment/xendit/... dan /api/upload langsung diproses oleh Cloud Function
+    return cleanPath;
   }
 
   // Fallback ke Railway / localhost
