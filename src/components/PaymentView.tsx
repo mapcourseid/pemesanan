@@ -865,6 +865,17 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
                     </td>
                   </tr>
 
+                  {currentOrder.additionalCost && currentOrder.additionalCost > 0 && (
+                    <tr className="text-purple-700 bg-purple-50/50">
+                      <td colSpan={3} className="py-2.5 font-bold">
+                        Tambahan Biaya (Penyesuaian Khusus / Add-On Layanan):
+                      </td>
+                      <td className="py-2.5 text-right font-bold font-mono">
+                        +{formatRupiah(currentOrder.additionalCost)}
+                      </td>
+                    </tr>
+                  )}
+
                   {currentOrder.discountAmount > 0 && (
                     <tr className="text-emerald-700 bg-emerald-50/50">
                       <td colSpan={3} className="py-2.5 font-bold">

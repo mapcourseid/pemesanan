@@ -11,7 +11,8 @@ import {
   CheckCircle2,
   Tag,
   Check,
-  AlertTriangle
+  AlertTriangle,
+  PlusCircle,
 } from 'lucide-react';
 import { LeafletMapPreview } from './LeafletMapPreview';
 import { 
@@ -145,6 +146,34 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
 
   // Compute live calculation
   const pricingResult = calculateOrderPrice(actualAreaM2, factors, appliedCouponCode);
+
+  // Fitur Tambahan Biaya (Slot Input Format Rupiah)
+  const [additionalCost, setAdditionalCost] = useState<number>(0);
+  const [additionalCostInput, setAdditionalCostInput] = useState<string>('');
+
+  const handleAdditionalCostChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.replace(/[^0-9]/g, '');
+    if (!raw) {
+      setAdditionalCostInput('');
+      setAdditionalCost(0);
+      return;
+    }
+    const num = parseInt(raw, 10);
+    setAdditionalCost(num);
+    setAdditionalCostInput(new Intl.NumberFormat('id-ID').format(num));
+  };
+
+  const handleSetPresetAdditionalCost = (amount: number) => {
+    setAdditionalCost(amount);
+    setAdditionalCostInput(new Intl.NumberFormat('id-ID').format(amount));
+  };
+
+  const handleResetAdditionalCost = () => {
+    setAdditionalCost(0);
+    setAdditionalCostInput('');
+  };
+
+  const finalTotalWithAdditional = Math.max(0, pricingResult.finalPrice + additionalCost);
 
   const handleApplyCoupon = () => {
     setCouponError(null);
@@ -384,7 +413,8 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
       polygonGeoJson,
       servicePackage: 'COMPLETE_RTB',
       basePriceMultiplier: pricingResult.basePriceMultiplier,
-      totalCost: pricingResult.finalPrice,
+      totalCost: finalTotalWithAdditional,
+      additionalCost: additionalCost > 0 ? additionalCost : undefined,
       subtotalBeforeDiscount: pricingResult.subtotal,
       discountCode: pricingResult.discountCode,
       discountAmount: pricingResult.discountAmount,
@@ -1172,6 +1202,61 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
               </div>
             )}
 
+            {/* SLOT TAMBAHAN BIAYA (FORMAT RUPIAH) - DI BAWAH INFORMASI SUBTOTAL BIAYA */}
+            <div className="space-y-2 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <PlusCircle className="w-3.5 h-3.5 text-[#7d3feb]" />
+                  Tambahan Biaya (Opsional)
+                </label>
+                {additionalCost > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleResetAdditionalCost}
+                    className="text-[11px] text-rose-600 hover:text-rose-700 font-semibold transition"
+                  >
+                    Reset Tambahan
+                  </button>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Klien dapat memasukkan nominal biaya tambahan jika terdapat penyesuaian khusus atau kebutuhan ekstra.
+              </p>
+
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                  <span className="text-xs font-bold text-slate-500 select-none">Rp</span>
+                </div>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={additionalCostInput}
+                  onChange={handleAdditionalCostChange}
+                  placeholder="0"
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:ring-2 focus:ring-[#7d3feb] focus:bg-white transition"
+                />
+              </div>
+
+              {/* Pilihan Cepat / Preset Tambahan Biaya */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-[10px] text-slate-400">Pilihan Cepat:</span>
+                {[100000, 250000, 500000, 1000000].map((preset) => (
+                  <button
+                    type="button"
+                    key={preset}
+                    onClick={() => handleSetPresetAdditionalCost(preset)}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold border transition ${
+                      additionalCost === preset
+                        ? 'bg-purple-100 border-[#7d3feb] text-[#7d3feb]'
+                        : 'bg-white border-slate-200 text-slate-600 hover:border-purple-300'
+                    }`}
+                  >
+                    +{formatRupiah(preset)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* FITUR DISKON / VOUCHER PROMO */}
             <div className="space-y-2 pt-3 border-t border-slate-100">
               <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
@@ -1219,17 +1304,40 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
             </div>
 
             {/* Total Price Display */}
-            <div className="pt-4 border-t-2 border-slate-200 space-y-1">
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-500 font-medium">Total Tagihan Bersih:</span>
+            <div className="pt-4 border-t-2 border-slate-200 space-y-2">
+              <div className="space-y-1 text-xs">
+                <div className="flex justify-between text-slate-600">
+                  <span>Subtotal Biaya:</span>
+                  <span className="font-mono">{formatRupiah(pricingResult.subtotal)}</span>
+                </div>
+                {additionalCost > 0 && (
+                  <div className="flex justify-between text-[#7d3feb] font-semibold">
+                    <span className="flex items-center gap-1">
+                      <PlusCircle className="w-3 h-3" /> Tambahan Biaya:
+                    </span>
+                    <span className="font-mono font-bold">+{formatRupiah(additionalCost)}</span>
+                  </div>
+                )}
                 {pricingResult.discountAmount > 0 && (
-                  <span className="text-xs text-emerald-600 font-bold">
-                    Hemat {formatRupiah(pricingResult.discountAmount)}
-                  </span>
+                  <div className="flex justify-between text-emerald-600 font-semibold">
+                    <span>Potongan Diskon:</span>
+                    <span className="font-mono">-{formatRupiah(pricingResult.discountAmount)}</span>
+                  </div>
                 )}
               </div>
-              <div className="text-2xl sm:text-3xl font-black text-[#7d3feb] tracking-tight">
-                {formatRupiah(pricingResult.finalPrice)}
+
+              <div className="pt-2 border-t border-slate-100 flex justify-between items-baseline">
+                <div className="flex flex-col">
+                  <span className="text-xs text-slate-500 font-medium">Total Tagihan Bersih:</span>
+                  {pricingResult.discountAmount > 0 && (
+                    <span className="text-[11px] text-emerald-600 font-bold">
+                      Hemat {formatRupiah(pricingResult.discountAmount)}
+                    </span>
+                  )}
+                </div>
+                <div className="text-2xl sm:text-3xl font-black text-[#7d3feb] tracking-tight font-mono">
+                  {formatRupiah(finalTotalWithAdditional)}
+                </div>
               </div>
               <p className="text-[11px] text-slate-400">
                 * Sudah termasuk sertifikasi polygon KKPR, dokumen RTB, & E-Invoice resmi.

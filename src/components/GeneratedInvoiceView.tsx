@@ -313,6 +313,18 @@ export const GeneratedInvoiceView: React.FC<GeneratedInvoiceViewProps> = ({
                 </td>
               </tr>
 
+              {/* Baris Tambahan Biaya jika ada */}
+              {order.additionalCost && order.additionalCost > 0 && (
+                <tr className="text-purple-700 bg-purple-50/60 font-semibold">
+                  <td colSpan={3} className="py-3 pr-4 font-bold">
+                    Tambahan Biaya (Penyesuaian Khusus / Add-On Layanan):
+                  </td>
+                  <td className="py-3 pl-4 text-right font-mono font-bold">
+                    +{formatRupiah(order.additionalCost)}
+                  </td>
+                </tr>
+              )}
+
               {/* Baris Diskon jika ada */}
               {order.discountAmount > 0 && (
                 <tr className="text-emerald-700 bg-emerald-50/60 font-semibold">

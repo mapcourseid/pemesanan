@@ -993,6 +993,14 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
                         {selectedOrder.paymentMethod || (selectedOrder.paymentStatus === 'PAID' ? 'Xendit Gateway' : '-')}
                       </span>
                     </div>
+                    {selectedOrder.additionalCost && selectedOrder.additionalCost > 0 && (
+                      <div className="flex justify-between items-center text-purple-700">
+                        <span>Tambahan Biaya:</span>
+                        <span className="font-bold font-mono text-[11px]">
+                          +{formatRupiah(selectedOrder.additionalCost)}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex justify-between items-center text-slate-600">
                       <span>Total Biaya Proyek:</span>
                       <span className="font-black text-[#7d3feb] font-mono text-sm">

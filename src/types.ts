@@ -68,10 +68,11 @@ export interface OrderItem {
   difficultyScore?: number;
   basePriceMultiplier: number;
   
-  // Fitur Diskon
+  // Fitur Diskon & Biaya Tambahan
   subtotalBeforeDiscount: number;
   discountCode?: string;
   discountAmount: number;
+  additionalCost?: number;
   totalCost: number;
 
   // Pembayaran
