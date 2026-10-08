@@ -334,6 +334,20 @@ export const TrackingView: React.FC<TrackingViewProps> = ({ initialTrackingCode 
                     Posisi: Terdapat <strong className="text-[#7d3feb] font-bold">{order.aheadCount}</strong> antrean di depan Anda
                   </div>
                 )}
+                <div>
+                  <a
+                    href={`https://wa.me/6285175057483?text=${encodeURIComponent(
+                      `Halo Admin MAP COURSE, saya ingin menanyakan progres pengerjaan pesanan dengan kode ${order.trackingCode} (${order.companyName}).`
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-xl text-xs font-bold transition shadow-sm"
+                    title="Konsultasi langsung via Admin WhatsApp"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Chat Admin WA</span>
+                  </a>
+                </div>
               </div>
             </div>
 

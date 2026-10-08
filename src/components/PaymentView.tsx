@@ -27,6 +27,7 @@ import { formatRupiah } from '../utils/pricing';
 import { apiUrl, parseJsonResponse } from '../utils/api';
 import { syncOrderToFirebase, fetchSingleOrderFromFirebase } from '../services/firebase';
 import { WhatsAppPreviewModal } from './WhatsAppPreviewModal';
+import { ADMIN_WHATSAPP_NUMBER, ADMIN_WHATSAPP_URL } from '../config/constants';
 
 interface PaymentViewProps {
   order: OrderItem | null;
@@ -301,9 +302,10 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
       <WhatsAppPreviewModal
         isOpen={showWaModal}
         onClose={() => setShowWaModal(false)}
-        phone="081234567890"
+        phone={ADMIN_WHATSAPP_NUMBER}
         recipientName="Admin MAP COURSE"
         messageText={waConfirmMessage}
+        title="Konfirmasi Pembayaran via WhatsApp Admin"
       />
 
       {/* Modal Preview Bukti Pembayaran */}
@@ -646,17 +648,29 @@ export const PaymentView: React.FC<PaymentViewProps> = ({
 
               {/* WhatsApp Notifikasi Admin */}
               <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
-                <span className="text-xs text-slate-500 text-center sm:text-left">
-                  Ingin konfirmasi langsung ke WhatsApp customer service?
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setShowWaModal(true)}
-                  className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow transition flex items-center justify-center gap-1.5"
-                >
-                  <MessageSquare className="w-4 h-4" />
-                  <span>Konfirmasi via WhatsApp</span>
-                </button>
+                <div className="text-xs text-slate-500 text-center sm:text-left">
+                  <span>Konfirmasi pembayaran ke Admin WhatsApp:</span>
+                  <strong className="text-slate-800 ml-1 block sm:inline font-mono">{ADMIN_WHATSAPP_NUMBER}</strong>
+                </div>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => setShowWaModal(true)}
+                    className="flex-1 sm:flex-none px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow transition flex items-center justify-center gap-1.5"
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                    <span>Chat Admin WA</span>
+                  </button>
+                  <a
+                    href={`${ADMIN_WHATSAPP_URL}?text=${encodeURIComponent(waConfirmMessage)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-xl text-xs transition"
+                    title="Buka langsung di WhatsApp"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                </div>
               </div>
             </div>
           </div>

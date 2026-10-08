@@ -6,10 +6,11 @@ import { TrackingView } from './components/TrackingView';
 import { GisInternalDashboard } from './components/GisInternalDashboard';
 import { StaffLoginModal } from './components/StaffLoginModal';
 import type { OrderItem } from './types';
-import { ShieldCheck, Flame, Lock } from 'lucide-react';
+import { ShieldCheck, Flame, Lock, MessageSquare } from 'lucide-react';
 import { initFirebaseService, logoutStaffWithFirebase, onStaffAuthStateChanged, fetchSingleOrderFromFirebase, syncOrderToFirebase } from './services/firebase';
 import { apiUrl, parseJsonResponse } from './utils/api';
 import { fetchXenditInvoiceByCode } from './services/xenditClient';
+import { ADMIN_WHATSAPP_NUMBER, ADMIN_WHATSAPP_URL } from './config/constants';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<'order' | 'payment' | 'tracking' | 'internal'>('order');
@@ -357,7 +358,18 @@ export function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4 text-xs">
+          <div className="flex items-center gap-4 text-xs flex-wrap">
+            <a
+              href={ADMIN_WHATSAPP_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-emerald-600 hover:text-emerald-700 font-bold hover:underline"
+              title="Hubungi Admin WhatsApp"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Admin WA: {ADMIN_WHATSAPP_NUMBER}</span>
+            </a>
+            <span>•</span>
             <span className="flex items-center gap-1 text-[#7d3feb] font-bold">
               <ShieldCheck className="w-4 h-4" /> Topologi Terverifikasi ATR/BPN
             </span>
@@ -365,8 +377,6 @@ export function App() {
             <span className="flex items-center gap-1 text-emerald-600 font-semibold">
               <Flame className="w-3.5 h-3.5" /> Firebase Realtime
             </span>
-            <span>•</span>
-            <span>Gateway Instant</span>
           </div>
         </div>
       </footer>
