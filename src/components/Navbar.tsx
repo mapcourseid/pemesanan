@@ -6,9 +6,7 @@ import {
   Layers,
   Lock,
   LogOut,
-  MessageSquare,
 } from 'lucide-react';
-import { ADMIN_WHATSAPP_URL, ADMIN_WHATSAPP_NUMBER } from '../config/constants';
 
 interface NavbarProps {
   activeTab: 'order' | 'payment' | 'tracking' | 'internal';
@@ -102,18 +100,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               <MapPin className="w-4 h-4" />
               <span className="hidden sm:inline">Tracking</span>
             </button>
-
-            {/* Admin WhatsApp Link */}
-            <a
-              href={ADMIN_WHATSAPP_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={`Hubungi Admin WhatsApp (${ADMIN_WHATSAPP_NUMBER})`}
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl text-xs sm:text-sm font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition"
-            >
-              <MessageSquare className="w-4 h-4 text-emerald-600" />
-              <span className="hidden md:inline">Admin WA</span>
-            </a>
 
             {/* Separator */}
             <div className="h-5 w-px bg-slate-200 mx-0.5 sm:mx-1" />
