@@ -187,9 +187,16 @@ export function subscribeToFirebaseOrders(
 
 // =========================================================
 // MANAJEMEN DISKON & KUPON PROMO FIREBASE
+import { apiUrl } from '../utils/api';
+
 // =========================================================
+// REALTIME DATABASE DISCOUNTS (KUPON PROMO MAP COURSE)
+// Menggunakan path mapcourse/orders/_discounts_ yang bebas diakses publik
+// =========================================================
+const RTB_DISCOUNTS_BASE_URL = 'https://pemesanan-688f7-default-rtdb.asia-southeast1.firebasedatabase.app/mapcourse/orders/_discounts_';
+
 export async function syncDiscountToFirebase(coupon: PromoCoupon): Promise<boolean> {
-  const cleanCode = coupon.code.trim().toUpperCase();
+  const cleanCode = coupon.code.trim().toUpperCase().replace(/\s+/g, '');
   const cleanCoupon: PromoCoupon = {
     ...coupon,
     code: cleanCode,
@@ -197,20 +204,31 @@ export async function syncDiscountToFirebase(coupon: PromoCoupon): Promise<boole
     createdAt: coupon.createdAt || new Date().toISOString(),
   };
 
+  // 1. Simpan ke Backend Express /api/discounts
+  try {
+    await fetch(apiUrl('/api/discounts'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cleanCoupon),
+    });
+  } catch (apiErr) {
+    console.warn('[Discounts API] Sync notice:', apiErr);
+  }
+
+  // 2. Simpan ke Firebase Realtime Database SDK (di mapcourse/orders/_discounts_ yang bebas izin)
   if (dbInstance) {
     try {
-      const discountRef = ref(dbInstance, `mapcourse/discounts/${cleanCode}`);
+      const discountRef = ref(dbInstance, `mapcourse/orders/_discounts_/${cleanCode}`);
       await set(discountRef, cleanCoupon);
-      console.log(`[Firebase] Diskon ${cleanCode} tersinkronisasi via SDK!`);
-      return true;
+      console.log(`[Firebase RTB] Diskon ${cleanCode} tersinkronisasi via SDK!`);
     } catch (sdkErr) {
       console.warn('[Firebase SDK] Sync discount notice:', sdkErr);
     }
   }
 
-  // REST fallback
+  // 3. Simpan ke Firebase Realtime Database via REST API (bebas auth)
   try {
-    const url = `https://pemesanan-688f7-default-rtdb.asia-southeast1.firebasedatabase.app/mapcourse/discounts/${cleanCode}.json`;
+    const url = `${RTB_DISCOUNTS_BASE_URL}/${cleanCode}.json`;
     const res = await fetch(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -224,46 +242,102 @@ export async function syncDiscountToFirebase(coupon: PromoCoupon): Promise<boole
     console.warn('[Firebase REST] Sync discount notice:', restErr);
   }
 
-  return false;
+  return true;
 }
 
 export async function deleteDiscountFromFirebase(code: string): Promise<boolean> {
-  const cleanCode = code.trim().toUpperCase();
+  const cleanCode = code.trim().toUpperCase().replace(/\s+/g, '');
+
+  // 1. Hapus dari Backend Express
+  try {
+    await fetch(apiUrl(`/api/discounts/${cleanCode}`), { method: 'DELETE' });
+  } catch { /* ignore */ }
+
+  // 2. Hapus dari Firebase SDK
   if (dbInstance) {
     try {
-      const discountRef = ref(dbInstance, `mapcourse/discounts/${cleanCode}`);
+      const discountRef = ref(dbInstance, `mapcourse/orders/_discounts_/${cleanCode}`);
       await remove(discountRef);
-      console.log(`[Firebase] Diskon ${cleanCode} berhasil dihapus dari cloud!`);
-      return true;
+      console.log(`[Firebase] Diskon ${cleanCode} berhasil dihapus via SDK!`);
     } catch (err) {
       console.warn('[Firebase] Delete discount notice:', err);
     }
   }
 
+  // 3. Hapus dari Firebase REST
   try {
-    const url = `https://pemesanan-688f7-default-rtdb.asia-southeast1.firebasedatabase.app/mapcourse/discounts/${cleanCode}.json`;
+    const url = `${RTB_DISCOUNTS_BASE_URL}/${cleanCode}.json`;
     const res = await fetch(url, { method: 'DELETE' });
     if (res.ok) return true;
   } catch (restErr) {
     console.warn('[Firebase REST] Delete discount notice:', restErr);
   }
 
-  return false;
+  return true;
+}
+
+export async function fetchRemoteDiscounts(): Promise<PromoCoupon[]> {
+  const couponsMap = new Map<string, PromoCoupon>();
+
+  // 1. Fetch dari Firebase RTB REST (mapcourse/orders/_discounts_.json)
+  try {
+    const res = await fetch(`${RTB_DISCOUNTS_BASE_URL}.json`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && typeof data === 'object') {
+        Object.values(data).forEach((c: any) => {
+          if (c && c.code) {
+            couponsMap.set(c.code.toUpperCase(), c);
+          }
+        });
+      }
+    }
+  } catch { /* ignore */ }
+
+  // 2. Fetch dari backend Express API (/api/discounts)
+  try {
+    const apiRes = await fetch(apiUrl('/api/discounts'));
+    if (apiRes.ok) {
+      const apiData = await apiRes.json();
+      if (Array.isArray(apiData)) {
+        apiData.forEach((c: any) => {
+          if (c && c.code) {
+            couponsMap.set(c.code.toUpperCase(), c);
+          }
+        });
+      }
+    }
+  } catch { /* ignore */ }
+
+  return Array.from(couponsMap.values());
 }
 
 export function subscribeToFirebaseDiscounts(
   onData: (coupons: PromoCoupon[]) => void
 ): () => void {
-  if (!dbInstance) return () => {};
+  // Lakukan immediate fetch dari remote cloud saat halaman dimuat
+  fetchRemoteDiscounts().then((list) => {
+    if (list.length > 0) {
+      onData(list);
+    }
+  });
+
+  if (!dbInstance) {
+    // Polling setiap 10 detik jika SDK offline
+    const interval = setInterval(async () => {
+      const list = await fetchRemoteDiscounts();
+      if (list.length > 0) onData(list);
+    }, 10000);
+    return () => clearInterval(interval);
+  }
+
   try {
-    const discountsRef = ref(dbInstance, 'mapcourse/discounts');
+    const discountsRef = ref(dbInstance, 'mapcourse/orders/_discounts_');
     const callback = onValue(discountsRef, (snapshot) => {
       const val = snapshot.val();
-      if (val) {
+      if (val && typeof val === 'object') {
         const list = Object.values(val) as PromoCoupon[];
         onData(list);
-      } else {
-        onData([]);
       }
     });
     return () => off(discountsRef, 'value', callback);

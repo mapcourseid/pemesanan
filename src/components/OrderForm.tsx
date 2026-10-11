@@ -18,7 +18,8 @@ import { LeafletMapPreview } from './LeafletMapPreview';
 import { 
   calculateOrderPrice, 
   formatRupiah, 
-  findActiveCoupon 
+  findActiveCoupon,
+  findActiveCouponAsync,
 } from '../utils/pricing';
 import type { AssessmentFactorInput } from '../utils/pricing';
 import type { OrderItem } from '../types';
@@ -128,7 +129,10 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
     }
   }, [presetData]);
 
-  // Subscribe ke pembaruan kupon diskon dari Firebase
+  // State versi kupon untuk memicu re-render instan saat ada kupon baru dari staff
+  const [couponsVersion, setCouponsVersion] = useState(0);
+
+  // Subscribe ke pembaruan kupon diskon dari Firebase & Backend
   useEffect(() => {
     const unsub = subscribeToFirebaseDiscounts((coupons) => {
       if (coupons && coupons.length > 0) {
@@ -138,13 +142,14 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
             if (c && c.code) custom[c.code.toUpperCase()] = c;
           });
           localStorage.setItem('mapcourse_custom_discounts', JSON.stringify(custom));
+          setCouponsVersion((v) => v + 1);
         } catch { /* ignore */ }
       }
     });
     return () => unsub();
   }, []);
 
-  // Compute live calculation
+  // Compute live calculation (akan otomatis recalculate bila couponsVersion berubah)
   const pricingResult = calculateOrderPrice(actualAreaM2, factors, appliedCouponCode);
 
   // Fitur Tambahan Biaya (Slot Input Format Rupiah)
@@ -175,22 +180,42 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
 
   const finalTotalWithAdditional = Math.max(0, pricingResult.finalPrice + additionalCost);
 
-  const handleApplyCoupon = () => {
+  const [isCheckingCoupon, setIsCheckingCoupon] = useState(false);
+
+  const handleApplyCoupon = async () => {
     setCouponError(null);
-    const clean = couponInput.trim().toUpperCase();
+    const clean = couponInput.trim().toUpperCase().replace(/\s+/g, '');
     if (!clean) {
       setAppliedCouponCode('');
       return;
     }
-    const coupon = findActiveCoupon(clean);
-    if (coupon) {
-      if (coupon.minAreaM2 && actualAreaM2 < coupon.minAreaM2) {
-        setCouponError(`Kupon ini hanya berlaku untuk luas lahan minimal ${coupon.minAreaM2.toLocaleString('id-ID')} m²`);
-        return;
+
+    setIsCheckingCoupon(true);
+    try {
+      // 1. Cek secara async ke cache lokal, Firebase RTB, dan server backend
+      const coupon = await findActiveCouponAsync(clean);
+      if (coupon) {
+        if (coupon.minAreaM2 && actualAreaM2 < coupon.minAreaM2) {
+          setCouponError(`Kupon ini hanya berlaku untuk luas lahan minimal ${coupon.minAreaM2.toLocaleString('id-ID')} m²`);
+          setIsCheckingCoupon(false);
+          return;
+        }
+        setAppliedCouponCode(clean);
+        setCouponsVersion((v) => v + 1);
+      } else {
+        setCouponError('Kode kupon tidak valid atau sudah tidak aktif.');
       }
-      setAppliedCouponCode(clean);
-    } else {
-      setCouponError('Kode kupon tidak valid atau sudah tidak aktif.');
+    } catch {
+      // Fallback lokal jika jaringan offline
+      const fallback = findActiveCoupon(clean);
+      if (fallback) {
+        setAppliedCouponCode(clean);
+        setCouponsVersion((v) => v + 1);
+      } else {
+        setCouponError('Kode kupon tidak valid atau sudah tidak aktif.');
+      }
+    } finally {
+      setIsCheckingCoupon(false);
     }
   };
 
@@ -1274,9 +1299,10 @@ export const OrderForm: React.FC<OrderFormProps> = ({ onOrderCreated, presetData
                 <button
                   type="button"
                   onClick={handleApplyCoupon}
-                  className="px-3.5 py-2 bg-[#7d3feb] hover:bg-[#6f2cdb] text-white text-xs font-bold rounded-xl shadow transition"
+                  disabled={isCheckingCoupon}
+                  className="px-3.5 py-2 bg-[#7d3feb] hover:bg-[#6f2cdb] text-white text-xs font-bold rounded-xl shadow transition disabled:opacity-75 disabled:cursor-not-allowed"
                 >
-                  Terapkan
+                  {isCheckingCoupon ? 'Memeriksa...' : 'Terapkan'}
                 </button>
               </div>
 

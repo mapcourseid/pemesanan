@@ -68,6 +68,94 @@ export function broadcastUpdate(type: string, data: any) {
 // In-Memory Database - starts empty, orders come from real customers
 export const orders: OrderItem[] = [];
 
+// Discounts in-memory store
+export interface ServerPromoCoupon {
+  code: string;
+  discountType: 'PERCENT' | 'FIXED';
+  discountValue: number;
+  description: string;
+  isActive?: boolean;
+  minAreaM2?: number;
+  createdAt?: string;
+  createdBy?: string;
+}
+
+export const serverCoupons: Record<string, ServerPromoCoupon> = {
+  'DISKON10': {
+    code: 'DISKON10',
+    discountType: 'PERCENT',
+    discountValue: 10,
+    description: 'Diskon Spesial 10% Semua Luasan Proyek',
+    isActive: true,
+  },
+  'MAPCOURSE20': {
+    code: 'MAPCOURSE20',
+    discountType: 'PERCENT',
+    discountValue: 20,
+    description: 'Promo Eksklusif Kemitraan MAP COURSE (Diskon 20%)',
+    isActive: true,
+  },
+  'LAUNCH1JT': {
+    code: 'LAUNCH1JT',
+    discountType: 'FIXED',
+    discountValue: 1000000,
+    description: 'Potongan Khusus Peluncuran Rp 1.000.000',
+    isActive: true,
+  },
+  'PROMOATR': {
+    code: 'PROMOATR',
+    discountType: 'FIXED',
+    discountValue: 500000,
+    description: 'Potongan Khusus ATR/BPN Rp 500.000',
+    isActive: true,
+  },
+};
+
+// GET all promo coupons
+app.get('/api/discounts', (_req, res) => {
+  res.json(Object.values(serverCoupons));
+});
+
+// GET promo coupon by code
+app.get('/api/discounts/:code', (req, res) => {
+  const code = req.params.code.trim().toUpperCase();
+  const coupon = serverCoupons[code];
+  if (!coupon) {
+    return res.status(404).json({ error: 'Kupon tidak ditemukan atau tidak aktif' });
+  }
+  res.json(coupon);
+});
+
+// CREATE or UPDATE promo coupon
+app.post('/api/discounts', (req, res) => {
+  const { code, discountType, discountValue, description, minAreaM2, isActive, createdBy } = req.body;
+  if (!code) {
+    return res.status(400).json({ error: 'Kode kupon wajib diisi' });
+  }
+  const cleanCode = code.trim().toUpperCase().replace(/\s+/g, '');
+  const coupon: ServerPromoCoupon = {
+    code: cleanCode,
+    discountType: discountType === 'FIXED' ? 'FIXED' : 'PERCENT',
+    discountValue: Number(discountValue) || 0,
+    description: description || `Kupon ${cleanCode}`,
+    minAreaM2: Number(minAreaM2) || 0,
+    isActive: isActive !== false,
+    createdAt: new Date().toISOString(),
+    createdBy: createdBy || 'Staf GIS',
+  };
+  serverCoupons[cleanCode] = coupon;
+  broadcastUpdate('discount_updated', coupon);
+  res.json({ success: true, coupon });
+});
+
+// DELETE promo coupon
+app.delete('/api/discounts/:code', (req, res) => {
+  const code = req.params.code.trim().toUpperCase();
+  delete serverCoupons[code];
+  broadcastUpdate('discount_deleted', { code });
+  res.json({ success: true, deletedCode: code });
+});
+
 // Server-Sent Events Endpoint
 app.get('/api/events', (_req, res) => {
   res.writeHead(200, {

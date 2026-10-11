@@ -4,6 +4,10 @@
       "orders": {
         ".read": true,
         ".write": true
+      },
+      "discounts": {
+        ".read": true,
+        ".write": true
       }
     }
   }

@@ -1,3 +1,5 @@
+import { apiUrl } from './api';
+
 export interface AssessmentFactorInput {
   rdtr: number; // 1 (Tersedia) | 5 (Tidak Tersedia)
   regional: number; // 5 (Reg 1: Jawa, Bali, Sumatera) | 3 (Reg 2: Kalimantan, Sulawesi, NT) | 1 (Reg 3: Maluku, Papua)
@@ -67,12 +69,56 @@ export function getAllCoupons(): Record<string, PromoCoupon> {
  */
 export function findActiveCoupon(code: string): PromoCoupon | null {
   if (!code) return null;
-  const cleanCode = code.trim().toUpperCase();
+  const cleanCode = code.trim().toUpperCase().replace(/\s+/g, '');
   const all = getAllCoupons();
   const coupon = all[cleanCode];
   if (!coupon) return null;
   if (coupon.isActive === false) return null;
   return coupon;
+}
+
+/**
+ * Mencari kupon secara asynchronous (cek cache lokal + cek remote realtime database & server API)
+ * Memastikan kupon yang baru saja dibuat di dashboard staf langsung dapat digunakan klien seketika!
+ */
+export async function findActiveCouponAsync(code: string): Promise<PromoCoupon | null> {
+  if (!code) return null;
+  const cleanCode = code.trim().toUpperCase().replace(/\s+/g, '');
+
+  // 1. Cek dari cache lokal
+  const cached = findActiveCoupon(cleanCode);
+  if (cached) return cached;
+
+  // 2. Cek langsung ke Firebase Realtime Database via REST (mapcourse/orders/_discounts_)
+  try {
+    const rtbUrl = `https://pemesanan-688f7-default-rtdb.asia-southeast1.firebasedatabase.app/mapcourse/orders/_discounts_/${cleanCode}.json`;
+    const res = await fetch(rtbUrl);
+    if (res.ok) {
+      const data: PromoCoupon = await res.json();
+      if (data && data.code && data.isActive !== false) {
+        saveCustomCoupon(data);
+        return data;
+      }
+    }
+  } catch (err) {
+    console.warn('[Pricing] RTB coupon lookup notice:', err);
+  }
+
+  // 3. Cek langsung ke backend Express API (/api/discounts/:code)
+  try {
+    const apiRes = await fetch(apiUrl(`/api/discounts/${cleanCode}`));
+    if (apiRes.ok) {
+      const data: PromoCoupon = await apiRes.json();
+      if (data && data.code && data.isActive !== false) {
+        saveCustomCoupon(data);
+        return data;
+      }
+    }
+  } catch (err) {
+    console.warn('[Pricing] API coupon lookup notice:', err);
+  }
+
+  return null;
 }
 
 /**
