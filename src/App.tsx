@@ -18,12 +18,26 @@ export function App() {
   const [trackingCodeToView, setTrackingCodeToView] = useState<string>('');
 
   // Staff Authentication State
-  const [isStaffLoggedIn, setIsStaffLoggedIn] = useState<boolean>(false);
-  const [staffUser, setStaffUser] = useState<{ name: string; role: string; email: string } | null>(null);
+  const [isStaffLoggedIn, setIsStaffLoggedIn] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('mapcourse_staff_session');
+      return !!(saved && JSON.parse(saved)?.email);
+    } catch {
+      return false;
+    }
+  });
+  const [staffUser, setStaffUser] = useState<{ name: string; role: string; email: string } | null>(() => {
+    try {
+      const saved = localStorage.getItem('mapcourse_staff_session');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [isStaffLoginOpen, setIsStaffLoginOpen] = useState<boolean>(false);
 
   // Firebase Realtime State
-  const [isFirebaseActive, setIsFirebaseActive] = useState<boolean>(false);
+  const [_isFirebaseActive, setIsFirebaseActive] = useState<boolean>(false);
 
   // Initialize Firebase & Auth listener + handle post-payment URL params
   useEffect(() => {
@@ -34,6 +48,9 @@ export function App() {
       if (user) {
         setIsStaffLoggedIn(true);
         setStaffUser(user);
+        try {
+          localStorage.setItem('mapcourse_staff_session', JSON.stringify(user));
+        } catch { /* ignore */ }
       }
     });
 

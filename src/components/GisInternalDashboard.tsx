@@ -141,10 +141,14 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
     if (!Array.isArray(incoming) || incoming.length === 0) return;
     setOrders((prev) => {
       const map = new Map<string, OrderItem>();
-      prev.forEach((o) => map.set(o.trackingCode.toUpperCase(), o));
-      incoming.forEach((o) => map.set(o.trackingCode.toUpperCase(), o));
+      prev.forEach((o) => {
+        if (o && o.trackingCode) map.set(o.trackingCode.toUpperCase(), o);
+      });
+      incoming.forEach((o) => {
+        if (o && o.trackingCode) map.set(o.trackingCode.toUpperCase(), o);
+      });
       const list = Array.from(map.values()).sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
       );
       return list;
     });
@@ -515,11 +519,14 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
   };
 
   const filteredOrders = orders.filter((o) => {
+    if (!o || !o.trackingCode) return false;
     const matchesFilter = filterStatus === 'ALL' || o.status === filterStatus;
+    const query = searchQuery.toLowerCase();
     const matchesSearch =
-      o.companyName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      o.trackingCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      o.queueNumber.toLowerCase().includes(searchQuery.toLowerCase());
+      (o.companyName || '').toLowerCase().includes(query) ||
+      (o.trackingCode || '').toLowerCase().includes(query) ||
+      (o.queueNumber || '').toLowerCase().includes(query) ||
+      (o.contactName || '').toLowerCase().includes(query);
     return matchesFilter && matchesSearch;
   });
 
@@ -811,7 +818,7 @@ export const GisInternalDashboard: React.FC<GisInternalDashboardProps> = ({
               </div>
 
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-                {['ALL', 'Verifikasi Berkas', 'Olah Data Polygon', 'Penyusunan Dokumen RTB', 'Quality Control', 'Selesai'].map((st) => (
+                {['ALL', 'Menunggu Pembayaran', 'Verifikasi Berkas', 'Olah Data Polygon', 'Penyusunan Dokumen RTB', 'Quality Control', 'Selesai'].map((st) => (
                   <button
                     key={st}
                     onClick={() => setFilterStatus(st)}

@@ -114,7 +114,7 @@ export const StaffLoginModal: React.FC<StaffLoginModalProps> = ({
             className="w-full py-3 px-4 bg-[#7d3feb] hover:bg-[#6f2cdb] active:scale-[0.99] text-white font-bold rounded-xl text-xs shadow-lg shadow-purple-500/25 flex items-center justify-center gap-2 transition"
           >
             <Lock className="w-4 h-4" />
-            <span>{loading ? 'Memverifikasi...' : 'Masuk'}</span>
+            <span>{loading ? 'Memverifikasi...' : 'Masuk ke Dashboard Staf'}</span>
           </button>
         </form>
       </div>
